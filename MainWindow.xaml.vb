@@ -85,7 +85,7 @@ Public Class MainWindow1
                         ShowExpdlg("错误7：程序设置已被篡改，请尝试删除所有位于HKEY_CURRENT_USER\SOFTWARE\LCS\keyboardmgr的设置，如仍不能解决问题，请联系LCS。", "")
                 End Select
                 KeyTextbox1.Text = ReadSetting("ClickKeys", "")
-                '加载连发键值
+                '加载连发键值 todo:封装成函数放模块里
                 Dim ClickKeys_str = ReadSetting("ClickKeys", "")
                 If ClickKeys_str.Length > 0 Then
                     For Each keyStr In ClickKeys_str.Split("+")
@@ -207,6 +207,20 @@ Public Class MainWindow1
                 Hide()
                 ShowExpdlg("错误2：程序控件状态不正常，可能是程序处于测试版或已被篡改！", "")
         End Select
+        Select Case Combobox2.SelectedIndex
+            Case 0
+                WriteSetting("FloatingWinShowState", 1) '始终显示
+            Case 1
+                WriteSetting("FloatingWinShowState", 0) '始终隐藏
+            Case 2
+                WriteSetting("FloatingWinShowState", 3) '自动收缩
+            Case Else
+                Hide()
+                ShowExpdlg("错误2：程序控件状态不正常，可能是程序处于测试版或已被篡改！", "")
+        End Select
+        'todo:实现悬浮窗相关功能
+        'todo:实现自定义快捷键
+
     End Sub
 
     Public Sub ShowWindow()

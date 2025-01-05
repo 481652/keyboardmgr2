@@ -80,7 +80,7 @@ Public Class FloatingWindow
     Private hotkeynum As Integer = 0
 
     Public Sub RegisterGlobalHotkey(hotkey As List(Of Byte), hotkeyid As Integer) '注册全局热键,hotkeyid为热键ID,范围为9000-9006,调用时注意对应上面的处理过程
-        If hotkey.Count > 2 Then
+        If hotkey.Count > 2 Or hotkey.Count = 1 Then
             ShowMyMessage("快捷键非法，请重新设置")
             Return
         End If
@@ -116,6 +116,30 @@ Public Class FloatingWindow
         For i As Integer = 9000 To 9000 + hotkeynum
             UnregisterHotKey(New WindowInteropHelper(Me).Handle, i)
         Next
+    End Sub
+
+#End Region
+
+#Region "Topmost"
+    '置顶当前窗体
+    <DllImport("user32.dll", SetLastError:=True)>
+    Private Shared Function SetWindowPos(ByVal hWnd As IntPtr, ByVal hWndInsertAfter As IntPtr, ByVal X As Integer, ByVal Y As Integer, ByVal cx As Integer, ByVal cy As Integer, ByVal uFlags As UInteger) As Boolean
+    End Function
+
+    Dim hwnd As IntPtr = New System.Windows.Interop.WindowInteropHelper(Me).Handle
+    Private ReadOnly HWND_TOPMOST As IntPtr = New IntPtr(-1)
+    Private ReadOnly HWND_NOTOPMOST As IntPtr = New IntPtr(-2)
+    Private Const SWP_NOMOVE As UInteger = &H2
+    Private Const SWP_NOSIZE As UInteger = &H1
+
+    Public Sub SetWindowTopMost()
+        Dim hWnd_ As IntPtr = hwnd
+        SetWindowPos(hWnd_, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE Or SWP_NOSIZE)
+    End Sub
+
+    Public Sub SetWindowNotTopMost()
+        Dim hWnd_ As IntPtr = hwnd
+        SetWindowPos(hWnd_, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE Or SWP_NOSIZE)
     End Sub
 
 #End Region
@@ -236,7 +260,7 @@ Public Class FloatingWindow
         stopButton.Visibility = Visibility.Visible
         clickButton.Visibility = Visibility.Hidden
         sendButton.Visibility = Visibility.Hidden
-        RegisterGlobalHotkey(New List(Of Byte) From {ConvertKeyToVirtualKeyCode(Key.F9)}, 9000)
+        RegisterGlobalHotkey(New List(Of Byte) From {162, 120}, 9000)
     End Sub
 
     Private Sub ClickButton_Click(sender As Object, e As RoutedEventArgs) '连点

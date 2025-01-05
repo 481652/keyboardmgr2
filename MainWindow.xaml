@@ -117,29 +117,40 @@
                 </Grid>
             </TabItem>
             <TabItem Header="选项">
-                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                    <Grid>
-                        <Grid Background="{DynamicResource backgroundColor1}"/>
+                <DockPanel>
+                    <ScrollViewer DockPanel.Dock = "Top" VerticalScrollBarVisibility="Visible" Height="312" Width="594" HorizontalAlignment="Left">
+                        <Grid HorizontalAlignment="Left">
 
-                        <Label Content="外观"  FontSize="23"  FontWeight="Light" />
-                        <Label Content="主题" HorizontalAlignment="Left" Margin="10,43,0,0" VerticalAlignment="Top"/>
-                        <ComboBox Style="{DynamicResource comboboxStyle}" x:Name="Combobox1" HorizontalAlignment="Left" Margin="53,43,0,0" VerticalAlignment="Top" Width="120" IsTextSearchEnabled="False">
+                            <Label Content="外观"  FontSize="23"  FontWeight="Light" Margin="5,5,480,461" />
+                           
+                            <Label Content="主题" HorizontalAlignment="Left" Margin="10,43,0,0" VerticalAlignment="Top"/>
+                            <ComboBox Style="{DynamicResource comboboxStyle}" x:Name="Combobox1" HorizontalAlignment="Left" Margin="53,43,0,0" VerticalAlignment="Top" Width="120" IsTextSearchEnabled="False">
 
-                            <ComboBoxItem Content="跟随系统"/>
-                            <ComboBoxItem Content="浅色"/>
-                            <ComboBoxItem Content="深色"/>
-                        </ComboBox>
-                        <Label Content="悬浮窗" HorizontalAlignment="Left" Margin="10,80,0,0" VerticalAlignment="Top"/>
-                        <ComboBox Style="{DynamicResource comboboxStyle}" x:Name="Combobox2" HorizontalAlignment="Left" Margin="67,78,0,0" VerticalAlignment="Top" Width="120" IsTextSearchEnabled="False">
-                            <ComboBoxItem Content="始终显示"/>
-                            <ComboBoxItem Content="始终隐藏"/>
-                            <ComboBoxItem Content="自动收缩"/>
-                        </ComboBox>
-                        <CheckBox x:Name="DoFloatingWindowTopmost" Margin="192,81,298,395" Content="悬浮窗置顶" Click="CheckBox_Click" />
-                        <Button Style="{DynamicResource DefaultButton}" Content="应用" HorizontalAlignment="Left" Height="36" Margin="491,323,0,0" VerticalAlignment="Top" Width="79" Click="Button_Click"/>
-
+                                <ComboBoxItem Content="跟随系统"/>
+                                <ComboBoxItem Content="浅色"/>
+                                <ComboBoxItem Content="深色"/>
+                            </ComboBox>
+                            <Label Content="悬浮窗" HorizontalAlignment="Left" Margin="10,80,0,0" VerticalAlignment="Top"/>
+                            <ComboBox Style="{DynamicResource comboboxStyle}" x:Name="Combobox2" HorizontalAlignment="Left" Margin="67,78,0,0" VerticalAlignment="Top" Width="120" IsTextSearchEnabled="False">
+                                <ComboBoxItem Content="始终显示"/>
+                                <ComboBoxItem Content="始终隐藏"/>
+                                <ComboBoxItem Content="自动收缩"/>
+                            </ComboBox>
+                            <CheckBox x:Name="DoFloatingWindowTopmost" Margin="192,81,283,395" Content="悬浮窗置顶" Click="CheckBox_Click" />
+                            <Label Content="快捷键"  FontSize="23"  FontWeight="Light" Margin="5,113,480,353" />
+                            <Label Content="终止任务" HorizontalAlignment="Left" Margin="10,152,0,0" VerticalAlignment="Top"/>
+                            <TextBox x:Name="KeyTextbox3" Text="Ctrl+Esc" InputMethod.IsInputMethodEnabled="False" HorizontalAlignment="Left" Height="32" Margin="81,152,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="173" PreviewTextInput="TextBox_PreviewTextInput" >
+                                <TextBox.CommandBindings>
+                                    <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"></CommandBinding>
+                                </TextBox.CommandBindings>
+                            </TextBox>
+                            
+                        </Grid>
+                    </ScrollViewer>
+                    <Grid DockPanel.Dock = "Bottom" Height="88" Width="614">
+                        <Button Style="{DynamicResource DefaultButton}" Content="应用" HorizontalAlignment="Left" Height="36"  VerticalAlignment="Top" Width="79" Click="Button_Click" Margin="493,0,0,0"/>
                     </Grid>
-                </ScrollViewer>
+                </DockPanel>
             </TabItem>
             <TabItem Header="关于">
                 <Grid Background="{DynamicResource backgroundColor1}">

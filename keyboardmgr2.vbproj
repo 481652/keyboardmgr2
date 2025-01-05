@@ -93,6 +93,9 @@
     <Compile Include="HelpWindow.xaml.vb">
       <DependentUpon>HelpWindow.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Modules\RegistryHelper.vb" />
+    <Compile Include="Modules\ThemeModule.vb" />
+    <Compile Include="Modules\UserInputHandler.vb" />
     <Compile Include="MyTrayicon.vb" />
     <Compile Include="UserInputHandler.vb" />
     <Compile Include="My Project\Resources.Designer.vb">
