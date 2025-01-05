@@ -93,11 +93,11 @@
     <Compile Include="HelpWindow.xaml.vb">
       <DependentUpon>HelpWindow.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Modules\DlgModule.vb" />
     <Compile Include="Modules\RegistryHelper.vb" />
     <Compile Include="Modules\ThemeModule.vb" />
     <Compile Include="Modules\UserInputHandler.vb" />
     <Compile Include="MyTrayicon.vb" />
-    <Compile Include="UserInputHandler.vb" />
     <Compile Include="My Project\Resources.Designer.vb">
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>
@@ -106,8 +106,6 @@
     <Compile Include="MyMsgbox.xaml.vb">
       <DependentUpon>MyMsgbox.xaml</DependentUpon>
     </Compile>
-    <Compile Include="RegistryHelper.vb" />
-    <Compile Include="ThemeModule.vb" />
     <Page Include="expWindow.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -128,7 +126,6 @@
       <DependentUpon>Application.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="DlgModule.vb" />
     <Compile Include="expWindow.xaml.vb">
       <DependentUpon>expWindow.xaml</DependentUpon>
     </Compile>
