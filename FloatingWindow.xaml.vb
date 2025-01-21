@@ -1,4 +1,5 @@
-﻿Imports System.Runtime.InteropServices
+﻿'悬浮窗代码及快捷键注册与处理
+Imports System.Runtime.InteropServices
 Imports System.Timers
 Imports System.Windows.Forms
 Imports System.Windows.Interop
@@ -22,10 +23,6 @@ Public Class FloatingWindow
     Private Const GWL_EXSTYLE As Integer = -20
     Private Const WS_EX_TOOLWINDOW As Integer = &H80
     Private Const WS_EX_APPWINDOW As Integer = &H40000
-
-    Private slideDown As DoubleAnimation
-    Private slideUp As DoubleAnimation
-    Private isClosing As Boolean = False
 
 #End Region
 
@@ -122,24 +119,13 @@ Public Class FloatingWindow
 
 #Region "Topmost"
     '置顶当前窗体
-    <DllImport("user32.dll", SetLastError:=True)>
-    Private Shared Function SetWindowPos(ByVal hWnd As IntPtr, ByVal hWndInsertAfter As IntPtr, ByVal X As Integer, ByVal Y As Integer, ByVal cx As Integer, ByVal cy As Integer, ByVal uFlags As UInteger) As Boolean
-    End Function
-
-    Dim hwnd As IntPtr = New System.Windows.Interop.WindowInteropHelper(Me).Handle
-    Private ReadOnly HWND_TOPMOST As IntPtr = New IntPtr(-1)
-    Private ReadOnly HWND_NOTOPMOST As IntPtr = New IntPtr(-2)
-    Private Const SWP_NOMOVE As UInteger = &H2
-    Private Const SWP_NOSIZE As UInteger = &H1
 
     Public Sub SetWindowTopMost()
-        Dim hWnd_ As IntPtr = hwnd
-        SetWindowPos(hWnd_, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE Or SWP_NOSIZE)
+        Topmost = True
     End Sub
 
     Public Sub SetWindowNotTopMost()
-        Dim hWnd_ As IntPtr = hwnd
-        SetWindowPos(hWnd_, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE Or SWP_NOSIZE)
+        Topmost = False
     End Sub
 
 #End Region
@@ -150,6 +136,18 @@ Public Class FloatingWindow
             Return _instance
         End Get
     End Property
+
+    Public Sub Unfold()
+        BeginAnimation(TopProperty, showAnimation)
+    End Sub
+
+#Region "Animation"
+
+    Private slideDown As DoubleAnimation
+    Private slideUp As DoubleAnimation
+    Private hideAnimation As DoubleAnimation
+    Private showAnimation As DoubleAnimation
+    Private isClosing As Boolean = False
 
     Public Sub New()
         InitializeComponent()
@@ -176,14 +174,65 @@ Public Class FloatingWindow
             .Duration = New Duration(TimeSpan.FromSeconds(0.5)),
             .EasingFunction = New CubicEase() With {.EasingMode = EasingMode.EaseIn}
         }
+        '隐藏和显示动画
+        hideAnimation = New DoubleAnimation() With {
+            .From = 0,
+            .To = -Me.Height + 10,
+            .Duration = New Duration(TimeSpan.FromSeconds(0.5)),
+            .EasingFunction = New CubicEase() With {.EasingMode = EasingMode.EaseOut}
+        }
+        showAnimation = New DoubleAnimation() With {
+            .From = -Me.Height + 10,
+            .To = 0,
+            .Duration = New Duration(TimeSpan.FromSeconds(0.5)),
+            .EasingFunction = New CubicEase() With {.EasingMode = EasingMode.EaseIn}
+        }
+        '添加属性
         _instance = Me
     End Sub
+#End Region
 
+#Region "detecting mouse"
+    'todo:修复这里的bug
+    Private Sub Window_MouseEnter(sender As Object, e As Input.MouseEventArgs)
+        '鼠标进入窗体
+        If FloatingWindowState = 2 Then
+            BeginAnimation(TopProperty, showAnimation)
+            isFloatingWindowFolded = False
+        End If
+    End Sub
+
+    Private Sub Window_MouseLeave(sender As Object, e As Input.MouseEventArgs)
+        '鼠标离开窗体
+        If FloatingWindowState = 2 Then
+            Dim delayTimer As New System.Windows.Threading.DispatcherTimer()
+            delayTimer.Interval = New TimeSpan(0, 0, 3) ' 延迟3秒后隐藏
+            AddHandler delayTimer.Tick, Sub()
+                                            BeginAnimation(TopProperty, hideAnimation)
+                                            delayTimer.Stop()
+                                        End Sub
+            delayTimer.Start()
+            isFloatingWindowFolded = True
+        End If
+    End Sub
+#End Region
     Private Sub Window_Loaded(sender As Object, e As RoutedEventArgs)
         '窗体加载时播放弹出动画
         BeginAnimation(TopProperty, slideDown)
         '置托盘图标
         Dim trayIcon As New MyTrayicon
+
+        '判断是否隐藏
+        If FloatingWindowState = 0 Then
+            Hide()
+        End If
+        If ReadSetting("IsFloatingWinTopmost", 0) = 1 Then
+            MainWindow1.Instance.DoFloatingWindowTopmost.IsChecked = True
+            FloatingWindow.Instance.SetWindowTopMost()
+        Else
+            MainWindow1.Instance.DoFloatingWindowTopmost.IsChecked = False
+            FloatingWindow.Instance.SetWindowNotTopMost()
+        End If
     End Sub
 
     Private Sub Window_Closing(sender As Object, e As System.ComponentModel.CancelEventArgs)
@@ -260,7 +309,7 @@ Public Class FloatingWindow
         stopButton.Visibility = Visibility.Visible
         clickButton.Visibility = Visibility.Hidden
         sendButton.Visibility = Visibility.Hidden
-        RegisterGlobalHotkey(New List(Of Byte) From {162, 120}, 9000)
+        RegisterGlobalHotkey(stopActHotkeys, 9000)
     End Sub
 
     Private Sub ClickButton_Click(sender As Object, e As RoutedEventArgs) '连点

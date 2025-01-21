@@ -110,6 +110,7 @@
                             </TextBox.CommandBindings>
                         </TextBox>
                         <Button Style="{DynamicResource DefaultButton}" Content="选取窗体" HorizontalAlignment="Left" Height="36" Margin="10,152,0,0" VerticalAlignment="Top" Width="173" Click="Button_Click_5"/>
+                        <Label x:Name="SelectedWindowHwnd" Content="选取的窗体句柄：暂无" HorizontalAlignment="Left" Margin="10,192,0,0" VerticalAlignment="Top" Height="28" Width="300"/>
                     </Grid>
                     <Label Content="注意：此功能仅在本程序运行时有效！" HorizontalAlignment="Left" Margin="222,327,0,0" VerticalAlignment="Top"/>
                     <Button Style="{DynamicResource DefaultButton}" Content="应用" HorizontalAlignment="Left" Height="36" Margin="491,323,0,0" VerticalAlignment="Top" Width="79" Click="Button_Click_4"/>

@@ -2,8 +2,6 @@
 '键鼠操作相关功能。
 Imports System.Runtime.InteropServices
 
-
-
 Module UserInputHandler
 #Region "KeyTextbox"
 
@@ -124,8 +122,6 @@ Module UserInputHandler
     End Structure
 #End Region
 
-
-
     '设置鼠标位置
 #Region "SetCursorPos"
 
@@ -155,65 +151,6 @@ Module UserInputHandler
 
 #End Region
 
-
-    '设置鼠标指针
-#Region "SetCursor"
-    <DllImport("user32.dll", SetLastError:=True)>
-    Private Function SetCursor(hCursor As IntPtr) As IntPtr
-    End Function
-
-    <DllImport("user32.dll", SetLastError:=True)>
-    Private Function LoadCursor(hInstance As IntPtr, lpCursorName As Integer) As IntPtr
-    End Function
-#End Region
-
-
-    '窗体选取功能
-#Region "WindowSelector"
-    Private Const WM_NCLBUTTONDOWN As Integer = &HA1
-    Private Const HTCAPTION As Integer = 2
-
-    <DllImport("user32.dll", CharSet:=CharSet.Auto)>
-    Private Function SendMessage(hWnd As IntPtr, Msg As Integer, wParam As Integer, lParam As Integer) As Integer
-    End Function
-
-    <DllImport("user32.dll", CharSet:=CharSet.Auto)>
-    Private Function ReleaseCapture() As Boolean
-    End Function
-
-    <DllImport("user32.dll", SetLastError:=True)>
-    Private Function GetCursorPos(ByRef lpPoint As Point) As Boolean
-    End Function
-
-    <DllImport("user32.dll", SetLastError:=True)>
-    Public Function WindowFromPoint(pt As Point) As IntPtr
-    End Function
-
-    Private Const IDC_HAND As Integer = 32649
-    Private handCursor As IntPtr = LoadCursor(IntPtr.Zero, IDC_HAND)
-
-    Public Event WindowSelected(hWnd As IntPtr)
-
-    Dim mouseHook As New GlobalMouseHook()
-
-    Public Sub StartSelection()
-        AddHandler mouseHook.WindowSelected, AddressOf MouseHook_WindowSelected
-        mouseHook.InstallHook()
-        Dim handCursor As IntPtr = LoadCursor(IntPtr.Zero, IDC_HAND)
-        SetCursor(handCursor)
-    End Sub
-
-    Public Sub StopSelection()
-        RemoveHandler mouseHook.WindowSelected, AddressOf MouseHook_WindowSelected
-        mouseHook.UninstallHook()
-        '恢复默认鼠标指针样式
-        SetCursor(IntPtr.Zero)
-    End Sub
-
-    Private Sub MouseHook_WindowSelected(hWnd As IntPtr)
-        RaiseEvent WindowSelected(hWnd)
-    End Sub
-#End Region
 
 
 

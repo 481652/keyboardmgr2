@@ -90,11 +90,12 @@
     <Compile Include="FloatingWindow.xaml.vb">
       <DependentUpon>FloatingWindow.xaml</DependentUpon>
     </Compile>
+    <Compile Include="GlobalMouseHook.vb" />
     <Compile Include="HelpWindow.xaml.vb">
       <DependentUpon>HelpWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="Modules\DlgModule.vb" />
-    <Compile Include="Modules\RegistryHelper.vb" />
+    <Compile Include="Modules\SettingsModule.vb" />
     <Compile Include="Modules\ThemeModule.vb" />
     <Compile Include="Modules\UserInputHandler.vb" />
     <Compile Include="MyTrayicon.vb" />

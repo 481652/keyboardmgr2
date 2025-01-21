@@ -1,6 +1,7 @@
 ﻿'主窗体代码
 Imports System.Runtime.InteropServices
 Imports System.Text.RegularExpressions
+Imports System.Threading
 Imports System.Timers
 Imports System.Windows.Interop
 Imports Microsoft.Win32
@@ -44,6 +45,24 @@ Public Class MainWindow1
                 SwitchTheme(True)
                 Combobox1.SelectedIndex = 2
             End If
+            'todo:去悬浮窗实现自动收缩等功能
+            '加载悬浮窗状态
+            Select Case ReadSetting("FloatingWinShowState", 1)
+                Case 0 '始终隐藏
+                    FloatingWindowState = 0
+                    Combobox2.SelectedIndex = 1
+                    FloatingWindow.Instance.Hide()
+                Case 1 '始终显示
+                    FloatingWindowState = 1
+                    Combobox2.SelectedIndex = 0
+                    FloatingWindow.Instance.Show()
+                Case 2 '自动收缩
+                    FloatingWindowState = 2
+                    Combobox2.SelectedIndex = 2
+                    FloatingWindow.Instance.Show()
+                Case Else
+                    ShowMyMessage("加载悬浮窗状态时失败！")
+            End Select
             '加载摸鱼设置
             If ReadSetting("IsLoafEnabled", 0) = 1 Then
                 LoafToggle.IsChecked = True
@@ -82,31 +101,26 @@ Public Class MainWindow1
                     Case "KeyboardClick"
                         RadioButton3.IsChecked = True
                     Case Else
-                        ShowExpdlg("错误7：程序设置已被篡改，请尝试删除所有位于HKEY_CURRENT_USER\SOFTWARE\LCS\keyboardmgr的设置，如仍不能解决问题，请联系LCS。", "")
+                        ShowMyMessage("加载连点模式时失败！")
                 End Select
                 KeyTextbox1.Text = ReadSetting("ClickKeys", "")
-                '加载连发键值 todo:封装成函数放模块里
+                '加载自定义键连点键值
                 Dim ClickKeys_str = ReadSetting("ClickKeys", "")
-                If ClickKeys_str.Length > 0 Then
-                    For Each keyStr In ClickKeys_str.Split("+")
-                        If keyStr = "Ctrl" Then
-                            savedkeys.Add(Key.LeftCtrl)
-                            Continue For
-                        ElseIf keyStr = "Alt" Then
-                            savedkeys.Add(Key.LeftAlt)
-                            Continue For
-                        ElseIf keyStr = "Shift" Then
-                            savedkeys.Add(Key.LeftShift)
-                            Continue For
-                        ElseIf keyStr = "Win" Then
-                            savedkeys.Add(Key.LWin)
-                            Continue For
-                        End If
-                        savedkeys.Add([Enum].Parse(GetType(Key), keyStr))
-                    Next
+                If LoadKeyData(ClickKeys_str) IsNot New List(Of Key) From {Key.None} Then
+                    savedkeys = LoadKeyData(ClickKeys_str)
+                Else
+                    ShowMyMessage("无法加载连点设置。")
                 End If
-
-                '加载快捷键设置
+            End If
+            '加载快捷键设置
+            If ReadSetting("StopActHotkeys", "") <> "" Then
+                KeyTextbox3.Text = ReadSetting("StopActHotkeys", "")
+                Dim StopActHotkeys_str = ReadSetting("StopActHotkeys", "")
+                If LoadKeyData(StopActHotkeys_str) IsNot New List(Of Key) From {Key.None} Then
+                    stopActHotkeys = ConvertKeyLogToVirtualKeyCodes(LoadKeyData(StopActHotkeys_str))
+                Else
+                    ShowMyMessage("无法加载快捷键设置。")
+                End If
             End If
         Catch ex As Exception
             Hide()
@@ -120,6 +134,7 @@ Public Class MainWindow1
         Dim style As Integer = GetWindowLong(hwnd, GWL_STYLE)
         SetWindowLong(hwnd, GWL_STYLE, style And Not WS_MAXIMIZEBOX)
     End Sub
+
 
     Public Sub Pinicon_Set()
         '在代码里设置pinButton图标，防止图标不显示
@@ -135,6 +150,7 @@ Public Class MainWindow1
         AddHandler SystemEvents.UserPreferenceChanged, AddressOf OnUserPreferenceChanged
         InitializeTextBoxKeyHandler(KeyTextbox1)
         InitializeTextBoxKeyHandler(KeyTextbox2)
+        InitializeTextBoxKeyHandler(KeyTextbox3)
         _instance = Me
     End Sub
 
@@ -189,6 +205,10 @@ Public Class MainWindow1
         End If
     End Sub
 
+
+
+#Region "SaveSettings"
+
     Private Sub Button_Click(sender As Object, e As RoutedEventArgs) '保存设置
         Select Case Combobox1.SelectedIndex
             Case 0
@@ -210,18 +230,42 @@ Public Class MainWindow1
         Select Case Combobox2.SelectedIndex
             Case 0
                 WriteSetting("FloatingWinShowState", 1) '始终显示
+                FloatingWindowState = 1
+                If isFloatingWindowFolded = True Then
+                    floatingWindow.Unfold()
+                End If
             Case 1
                 WriteSetting("FloatingWinShowState", 0) '始终隐藏
+                ShowMyMessage("注意：悬浮窗隐藏后您只能使用快捷键来控制部分程序功能！")
+                FloatingWindowState = 0
             Case 2
-                WriteSetting("FloatingWinShowState", 3) '自动收缩
+                WriteSetting("FloatingWinShowState", 2) '自动收缩
+                ShowMyMessage("注意：把鼠标移到悬浮窗上就可以展开它")
+                FloatingWindowState = 2
             Case Else
                 Hide()
                 ShowExpdlg("错误2：程序控件状态不正常，可能是程序处于测试版或已被篡改！", "")
         End Select
-        'todo:实现悬浮窗相关功能
+        If DoFloatingWindowTopmost.IsChecked = True Then
+            WriteSetting("IsFloatingWinTopmost", 1)
+            FloatingWindow.Instance.SetWindowTopMost()
+        Else
+            WriteSetting("IsFloatingWinTopmost", 0)
+            FloatingWindow.Instance.SetWindowNotTopMost()
+        End If
         'todo:实现自定义快捷键
-
+        If KeyTextbox3.Text <> "" Then
+            WriteSetting("StopActHotkeys", KeyTextbox3.Text)
+        Else
+            ShowMyMessage("无法保存设置：没有指定一个或多个快捷键")
+            Return
+        End If
     End Sub
+    'todo:检测热键冲突和在注册表编辑器中打开设置
+
+#End Region
+
+
 
     Public Sub ShowWindow()
         Show()
@@ -253,7 +297,12 @@ Public Class MainWindow1
             WriteSetting("ClickMode", "RightClick")
         ElseIf RadioButton3.IsChecked = True Then
             WriteSetting("ClickMode", "KeyboardClick")
-            WriteSetting("ClickKeys", KeyTextbox1.Text)
+            If KeyTextbox1.Text <> "" Then
+                WriteSetting("ClickKeys", KeyTextbox1.Text)
+            Else
+                ShowMyMessage("无法保存设置：没有指定要连点的键")
+                Return
+            End If
             If Textbox1.Text <= 50 Then
                 ShowMyMessage("无法保存设置：键盘按键连点需要发送间隔大于50！")
                 Textbox1.Text = 60
@@ -345,10 +394,10 @@ Public Class MainWindow1
             Return
         ElseIf Textbox1.Text > 0 Then
             clickTime = Textbox1.Text '此处隐式转换
-            If CheckBox1.IsChecked = True Then 'todo:速度偏移
+            If CheckBox1.IsChecked = True Then '速度偏移
                 isSpeedRandomOffset = True
             End If
-            If CheckBox2.IsChecked = True Then 'todo:位置偏移
+            If CheckBox2.IsChecked = True Then '位置偏移
                 isPosRandomOffset = True
             End If
             If CheckBox3.IsChecked = True Then '自定义鼠标位置
@@ -425,6 +474,7 @@ Public Class MainWindow1
             Return
         End If
     End Sub
+
     Dim random As New Random
     Private Sub Timer1_Elapsed(sender As Object, e As ElapsedEventArgs)
         '左键连点
@@ -475,6 +525,7 @@ Public Class MainWindow1
         End Select
 
     End Sub
+
     Public Sub StopClick()
 
         RemoveHandler timer1.Elapsed, AddressOf Timer1_Elapsed
@@ -513,8 +564,6 @@ Public Class MainWindow1
         End If
     End Sub
 
-
-
     Private Sub LoafHelpButton_Click(sender As Object, e As RoutedEventArgs) '显示帮助
         Dim helps As New List(Of String) From {
             "摸鱼工具箱可以让您使用一组快捷键即可快速调整窗口，使用方法如下：",
@@ -525,13 +574,19 @@ Public Class MainWindow1
         ShowHelp(helps, "摸鱼工具箱帮助")
     End Sub
 
+    'todo:钩子莫名被卸载
     Private Sub Button_Click_5(sender As Object, e As RoutedEventArgs) '选取窗体
+        ShowMyMessage("单击窗体以选取！")
+        AddHandler WindowSelected, AddressOf UserInputHandler_WindowSelected
+        StartSelection()
+    End Sub
 
+    Private Sub UserInputHandler_WindowSelected(hWnd As IntPtr)
+        SelectedWindowHwnd.Content = "选取的窗体句柄：" & hWnd.ToString
     End Sub
 
 
 
-
-
 #End Region
+
 End Class
