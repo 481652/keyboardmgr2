@@ -5,11 +5,16 @@ Imports System.Threading
 Imports System.Timers
 Imports System.Windows.Interop
 Imports Microsoft.Win32
+Imports WindowSelector
 Imports Timer = System.Timers.Timer
 
 
 
 Public Class MainWindow1
+
+    'git id
+    Public Const id As String = "2b246a3c"
+
     Private floatingWindow As New FloatingWindow
     Private Shared _instance As MainWindow1
     '移除最大化按钮
@@ -31,6 +36,13 @@ Public Class MainWindow1
         If osVersion.Major < 10 OrElse (osVersion.Major = 10 AndAlso osVersion.Build < 17763) Then
             Hide()
             ShowExpdlg("错误：本程序不支持当前操作系统。要使用本程序，请使用Windows 10 1809或更高版本。", "")
+        End If
+        '判断是否为测试版
+        If My.Application.Info.Version.Revision <> 0 Then
+            ProductName.Content = "键鼠管家测试版"
+            Title = "键鼠管家测试版"
+            WelcomeText.Content = "欢迎参与键鼠管家测试版的测试！"
+            TestTip.Visibility = Visibility.Visible
         End If
         Try
             '检测设置并初始化控件状态
@@ -127,6 +139,7 @@ Public Class MainWindow1
             ShowExpdlg("错误6：程序在初始化时读取设置出现问题，请尝试删除所有位于HKEY_CURRENT_USER\SOFTWARE\LCS\keyboardmgr的设置，如仍不能解决问题，请联系LCS。", ex.Message)
         End Try
         VerLabel.Content = "版本号：" & My.Application.Info.Version.Major & "." & My.Application.Info.Version.Minor & "." & My.Application.Info.Version.Build & "." & My.Application.Info.Version.Revision
+        GitID.Content = "Git ID：" & id
         floatingWindow.Show() '弹出悬浮窗
         Pinicon_Set()
         '移除最大化按钮
@@ -574,16 +587,16 @@ Public Class MainWindow1
         ShowHelp(helps, "摸鱼工具箱帮助")
     End Sub
 
-    'todo:钩子莫名被卸载
     Private Sub Button_Click_5(sender As Object, e As RoutedEventArgs) '选取窗体
-        ShowMyMessage("单击窗体以选取！")
-        AddHandler WindowSelected, AddressOf UserInputHandler_WindowSelected
-        StartSelection()
+        Dim selectorForm As New WindowSelectorDlg()
+        If selectorForm.ShowDialog() = System.Windows.Forms.DialogResult.OK Then
+            Dim selectedHwnd As IntPtr = selectorForm.SelectedWindowHwnd
+            SelectedWindowHwnd.Content = "选取的窗体句柄：" & selectedHwnd.ToString
+        End If
+
     End Sub
 
-    Private Sub UserInputHandler_WindowSelected(hWnd As IntPtr)
-        SelectedWindowHwnd.Content = "选取的窗体句柄：" & hWnd.ToString
-    End Sub
+
 
 
 

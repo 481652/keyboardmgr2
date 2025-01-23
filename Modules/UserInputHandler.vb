@@ -190,11 +190,10 @@ Module UserInputHandler
     End Function
 
     Private Const IDC_HAND As Integer = 32649
-    Private handCursor As IntPtr = LoadCursor(IntPtr.Zero, IDC_HAND)
 
     Public Event WindowSelected(hWnd As IntPtr)
 
-    Dim mouseHook As New GlobalMouseHook()
+    Private mouseHook As New GlobalMouseHook()
 
     Public Sub StartSelection()
         AddHandler mouseHook.WindowSelected, AddressOf MouseHook_WindowSelected

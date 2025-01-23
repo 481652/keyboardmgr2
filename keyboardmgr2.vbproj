@@ -218,5 +218,11 @@
   <ItemGroup>
     <Resource Include="resource\icondark.png" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\WindowSelector\LCSWindowSelector.vbproj">
+      <Project>{370A051A-B965-4DED-97C8-EF0BF9A50214}</Project>
+      <Name>LCSWindowSelector</Name>
+    </ProjectReference>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.VisualBasic.targets" />
 </Project>

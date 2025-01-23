@@ -29,17 +29,19 @@
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition/>
                     </Grid.ColumnDefinitions>
 
-                    <Label Grid.Row="0"  
+                    <Label x:Name="WelcomeText" Grid.Row="0"  
                Grid.Column="0"
-               Margin="5"
+               Margin="5,5,5,5"
                Content="欢迎使用键鼠管家！"  
                
                FontSize="23"  
                FontWeight="Light" />
                     <Button Style="{DynamicResource LinkButton}" Content="开发博客" Grid.Row="1" Grid.Column="0" Margin="10,278,150,-153" Click="Button_Click_1"/>
                     <Button Style="{DynamicResource LinkButton}" Content="加入Q群" Grid.Row="1" Grid.Column="0" Margin="82,278,79,-153" Click="Button_Click_2" RenderTransformOrigin="0.088,0.602"/>
+                    <TextBlock x:Name="TestTip" Grid.ColumnSpan="2" HorizontalAlignment="Left" Height="40" Margin="44,214,0,0" Grid.Row="1" TextWrapping="Wrap" Text="注意：测试版的程序部分功能极不稳定、包含许多未完成的特性（这些功能都标有[Beta]），不建议日常使用。" VerticalAlignment="Top" Width="494" Visibility="Collapsed"/>
 
                 </Grid>
             </TabItem>
@@ -97,7 +99,7 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="611"/>
                     </Grid.ColumnDefinitions>
-                    <Label Grid.Row="0"  Grid.Column="0" Content="摸鱼工具箱" FontSize="23" FontWeight="Light" Margin="5,5,480,461"/>
+                    <Label Grid.Row="0"  Grid.Column="0" Content="[Beta]摸鱼工具箱" FontSize="23" FontWeight="Light" Margin="5,5,414,461"/>
                     <CheckBox x:Name="LoafToggle" Margin="10,45,480,431" Content="启用摸鱼" Click="CheckBox_Click" />
                     <Grid x:Name="LoafGrid">
                         <Grid.ColumnDefinitions>
@@ -123,7 +125,7 @@
                         <Grid HorizontalAlignment="Left">
 
                             <Label Content="外观"  FontSize="23"  FontWeight="Light" Margin="5,5,480,461" />
-                           
+
                             <Label Content="主题" HorizontalAlignment="Left" Margin="10,43,0,0" VerticalAlignment="Top"/>
                             <ComboBox Style="{DynamicResource comboboxStyle}" x:Name="Combobox1" HorizontalAlignment="Left" Margin="53,43,0,0" VerticalAlignment="Top" Width="120" IsTextSearchEnabled="False">
 
@@ -135,7 +137,7 @@
                             <ComboBox Style="{DynamicResource comboboxStyle}" x:Name="Combobox2" HorizontalAlignment="Left" Margin="67,78,0,0" VerticalAlignment="Top" Width="120" IsTextSearchEnabled="False">
                                 <ComboBoxItem Content="始终显示"/>
                                 <ComboBoxItem Content="始终隐藏"/>
-                                <ComboBoxItem Content="自动收缩"/>
+                                <ComboBoxItem Content="[Beta]自动收缩"/>
                             </ComboBox>
                             <CheckBox x:Name="DoFloatingWindowTopmost" Margin="192,81,283,395" Content="悬浮窗置顶" Click="CheckBox_Click" />
                             <Label Content="快捷键"  FontSize="23"  FontWeight="Light" Margin="5,113,480,353" />
@@ -145,7 +147,7 @@
                                     <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"></CommandBinding>
                                 </TextBox.CommandBindings>
                             </TextBox>
-                            
+
                         </Grid>
                     </ScrollViewer>
                     <Grid DockPanel.Dock = "Bottom" Height="88" Width="614">
@@ -155,10 +157,14 @@
             </TabItem>
             <TabItem Header="关于">
                 <Grid Background="{DynamicResource backgroundColor1}">
-                    <Label Content="关于" FontSize="23" FontWeight="Light"/>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+                    <Label FontSize="23" FontWeight="Light"/>
                     <Image Margin="18,48,452,198" Source="{DynamicResource aboutIcon}"/>
-                    <Label Content="键鼠管家" FontSize="23" FontWeight="Light" Margin="167,67,297,253" Height="50" Width="150"/>
+                    <Label x:Name="ProductName" Content="键鼠管家" FontSize="23" FontWeight="Light" Margin="167,64,231,258"/>
                     <Label x:Name="VerLabel" Content="版本号：" FontSize="18" FontWeight="Light" Margin="167,132,297,208" Width="150" Height="50"/>
+                    <Label x:Name="GitID" Content="最近的提交id：" FontSize="14" FontWeight="Light" Margin="167,182,297,157"/>
                 </Grid>
             </TabItem>
 

@@ -1,4 +1,5 @@
-﻿'全局鼠标钩子类，仅用于窗体选取时捕获鼠标动作
+﻿
+'全局鼠标钩子类， 仅用于窗体选取时捕获鼠标动作
 Imports System.Runtime.InteropServices
 
 Public Class GlobalMouseHook
@@ -16,6 +17,7 @@ Public Class GlobalMouseHook
     Public Sub InstallHook()
         mouseDelegate = New HookCallback(AddressOf MouseHookProc)
         mouseHook = SetHook(mouseDelegate)
+        GCHandle.Alloc(mouseDelegate) '防止垃圾回收引发bug  
     End Sub
 
     '卸载钩子
@@ -33,23 +35,27 @@ Public Class GlobalMouseHook
     End Function
 
     '鼠标钩子回调函数
+    Private mouseHookProcDelegate As HookCallback = AddressOf MouseHookProc
+
     Private Function MouseHookProc(nCode As Integer, wParam As IntPtr, lParam As IntPtr) As IntPtr
-        If nCode >= 0 AndAlso wParam = CType(WM_LBUTTONDOWN, IntPtr) Then
-            Dim hookStruct As MSLLHOOKSTRUCT = Marshal.PtrToStructure(Of MSLLHOOKSTRUCT)(lParam)
-            '处理左键点击事件            
-            Dim p As New GlobalMouseHook.POINT With {.x = hookStruct.pt.x, .y = hookStruct.pt.y}
-            '转换为函数需要的point
-            Dim systemPoint As New Windows.Point(Convert.ToDouble(p.x), Convert.ToDouble(p.y))
-            Dim hWnd As IntPtr = WindowFromPoint(systemPoint)
-            ' 检查句柄是否有效
-            If hWnd <> IntPtr.Zero Then
-                RaiseEvent WindowSelected(hWnd)
-                '只有在成功选取窗体后才停止选取状态
-                StopSelection()
+        If nCode >= 0 Then
+            If wParam = CType(WM_LBUTTONDOWN, IntPtr) Then
+                '将 lParam 转换为 MSLLHOOKSTRUCT 结构体
+                Dim hookStruct As MSLLHOOKSTRUCT = Marshal.PtrToStructure(Of MSLLHOOKSTRUCT)(lParam)
+                '访问 hookStruct 中的字段
+                Dim p As New GlobalMouseHook.POINT With {.x = hookStruct.pt.x, .y = hookStruct.pt.y}
+                Dim systemPoint As New Windows.Point(Convert.ToDouble(p.x), Convert.ToDouble(p.y))
+                Dim hWnd As IntPtr = WindowFromPoint(systemPoint)
+                '检查句柄是否有效
+                If hWnd <> IntPtr.Zero Then
+                    RaiseEvent WindowSelected(hWnd)
+                    StopSelection()
+                End If
             End If
         End If
         Return CallNextHookEx(mouseHook, nCode, wParam, lParam)
     End Function
+
 
     Private Const WH_MOUSE_LL As Integer = 14
     Private Const WM_LBUTTONDOWN As Integer = &H201
@@ -88,7 +94,6 @@ Public Class GlobalMouseHook
 
     '自定义事件用于传递选定的窗口句柄
     Public Event WindowSelected(hWnd As IntPtr)
-
 
     '停止选择的公共方法
     Public Sub StopSelection()
