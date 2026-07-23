@@ -249,19 +249,13 @@
                                     <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"></CommandBinding>
                                 </TextBox.CommandBindings>
                             </TextBox>
-                            <Label Content="预留热键3" HorizontalAlignment="Left" Margin="10,275,0,0" VerticalAlignment="Top"/>
-                            <TextBox x:Name="KeyTextbox6" InputMethod.IsInputMethodEnabled="False" HorizontalAlignment="Left" Height="32" Margin="81,275,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="173" PreviewTextInput="TextBox_PreviewTextInput" >
+                            <Label Content="显示/隐藏主界面" HorizontalAlignment="Left" Margin="10,275,0,0" VerticalAlignment="Top"/>
+                            <TextBox x:Name="KeyTextbox6" InputMethod.IsInputMethodEnabled="False" HorizontalAlignment="Left" Height="32" Margin="130,275,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="173" PreviewTextInput="TextBox_PreviewTextInput" >
                                 <TextBox.CommandBindings>
                                     <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"></CommandBinding>
                                 </TextBox.CommandBindings>
                             </TextBox>
-                            <Label Content="预留热键4" HorizontalAlignment="Left" Margin="10,315,0,0" VerticalAlignment="Top"/>
-                            <TextBox x:Name="KeyTextbox7" InputMethod.IsInputMethodEnabled="False" HorizontalAlignment="Left" Height="32" Margin="81,315,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="173" PreviewTextInput="TextBox_PreviewTextInput" >
-                                <TextBox.CommandBindings>
-                                    <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"></CommandBinding>
-                                </TextBox.CommandBindings>
-                            </TextBox>
-                            <Label Content="注：所有快捷键有关的设置需重启程序后生效。" HorizontalAlignment="Left" Margin="10,360,0,0" VerticalAlignment="Top"/>
+                            <Label Content="注：所有快捷键有关的设置需重启程序后生效。" HorizontalAlignment="Left" Margin="10,320,0,0" VerticalAlignment="Top"/>
 
                         </Grid>
                     </ScrollViewer>

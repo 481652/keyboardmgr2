@@ -272,29 +272,20 @@ Public Class MainWindow1
             KeyTextbox5.Text = sendHotkeyStr
             rapidFireHotkeys = ConvertKeyLogToVirtualKeyCodes(LoadKeyData(sendHotkeyStr))
         End If
-        '加载预留热键3
-        Dim custom3Str As String = ReadSetting("CustomHotkeys3", "")
-        If custom3Str <> "" Then
-            KeyTextbox6.Text = custom3Str
-            Dim keyList = LoadKeyData(custom3Str)
-            customHotkeys3 = ConvertKeyLogToVirtualKeyCodes(keyList)
+        '迁移旧的预留热键3，并作为主界面显示/隐藏热键。
+        Dim toggleMainStr As String = ReadSetting("ToggleMainWindowHotkeys", "").ToString()
+        If toggleMainStr = "" Then toggleMainStr = ReadSetting("CustomHotkeys3", "Ctrl+F3").ToString()
+        If toggleMainStr = "" Then toggleMainStr = "Ctrl+F3"
+        WriteSetting("ToggleMainWindowHotkeys", toggleMainStr)
+        DeleteSetting("CustomHotkeys3")
+        DeleteSetting("CustomHotkeys4")
+        If toggleMainStr <> "" Then
+            KeyTextbox6.Text = toggleMainStr
+            Dim keyList = LoadKeyData(toggleMainStr)
+            toggleMainWindowHotkeys = ConvertKeyLogToVirtualKeyCodes(keyList)
             If IsNoneKeyList(keyList) Then
-                ShowMyMessage("无法加载预留快捷键3设置。")
+                ShowMyMessage("无法加载主界面显示快捷键设置。")
             End If
-        Else
-            WriteSetting("CustomHotkeys3", "Ctrl+F3")
-        End If
-        '加载预留热键4
-        Dim custom4Str As String = ReadSetting("CustomHotkeys4", "")
-        If custom4Str <> "" Then
-            KeyTextbox7.Text = custom4Str
-            Dim keyList = LoadKeyData(custom4Str)
-            customHotkeys4 = ConvertKeyLogToVirtualKeyCodes(keyList)
-            If IsNoneKeyList(keyList) Then
-                ShowMyMessage("无法加载预留快捷键4设置。")
-            End If
-        Else
-            WriteSetting("CustomHotkeys4", "Ctrl+F4")
         End If
     End Sub
 
@@ -316,8 +307,9 @@ Public Class MainWindow1
         If rapidFireHotkeys.Count > 0 Then
             floatingWindow.RegisterGlobalHotkey(rapidFireHotkeys, 9003)
         End If
-        '预留热键3/4(9004/9005)当前无对应动作，暂不注册以免占用系统全局热键、与其他程序冲突。
-        '设置项与UI保留，待功能明确后再启用注册与 FloatingWindow.WndProc 中的处理分支。
+        If toggleMainWindowHotkeys.Count > 0 Then
+            floatingWindow.RegisterGlobalHotkey(toggleMainWindowHotkeys, 9004)
+        End If
     End Sub
 
     Public Sub Pinicon_Set()
@@ -341,7 +333,6 @@ Public Class MainWindow1
         InitializeTextBoxKeyHandler(KeyTextbox4)
         InitializeTextBoxKeyHandler(KeyTextbox5)
         InitializeTextBoxKeyHandler(KeyTextbox6)
-        InitializeTextBoxKeyHandler(KeyTextbox7)
         _instance = Me
     End Sub
 
@@ -472,13 +463,9 @@ Public Class MainWindow1
         If KeyTextbox5.Text <> "" Then
             WriteSetting("RapidFireHotkeys", KeyTextbox5.Text)
         End If
-        '保存预留热键3
+        '保存主界面显示/隐藏热键
         If KeyTextbox6.Text <> "" Then
-            WriteSetting("CustomHotkeys3", KeyTextbox6.Text)
-        End If
-        '保存预留热键4
-        If KeyTextbox7.Text <> "" Then
-            WriteSetting("CustomHotkeys4", KeyTextbox7.Text)
+            WriteSetting("ToggleMainWindowHotkeys", KeyTextbox6.Text)
         End If
         If IsMicaEnabledCheckbox.IsChecked = True Then
             WriteSetting("IsMicaEnabled", 1)
@@ -523,6 +510,18 @@ Public Class MainWindow1
 
     Public Sub ShowWindow()
         Show()
+    End Sub
+
+    Public Sub ToggleMainWindowVisibility()
+        If IsVisible AndAlso WindowState <> WindowState.Minimized Then
+            Hide()
+            Return
+        End If
+
+        Show()
+        WindowState = WindowState.Normal
+        Activate()
+        SetForegroundWindow(New WindowInteropHelper(Me).Handle)
     End Sub
 
 

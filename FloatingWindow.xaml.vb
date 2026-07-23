@@ -98,9 +98,8 @@ Public Class FloatingWindow
                     MainWindow1.Instance.ToggleClick()
                 Case 9003 '连发开关（热键按下时切换连发启动/停止）
                     MainWindow1.Instance.ToggleSend()
-                Case 9004 '预留热键3（可自定义扩展）
-                Case 9005 '预留热键4（可自定义扩展）
-                Case 9006 '预留热键
+                Case 9004 '显示/隐藏主界面
+                    MainWindow1.Instance.ToggleMainWindowVisibility()
                 Case Else
             End Select
         End If
@@ -111,7 +110,7 @@ Public Class FloatingWindow
     '托盘图标实例，作为字段持有以便退出时释放、避免托盘残留幽灵图标
     Private trayIcon As MyTrayicon
     Private hotkeynum As Integer = 0
-    Private Const TEMP_TEST_HOTKEY_ID As Integer = 9999 '临时测试用ID，不与9000-9006冲突
+    Private Const TEMP_TEST_HOTKEY_ID As Integer = 9999 '临时测试用ID，不与9000-9004冲突
 
     '修饰符常量
     Private Const MOD_ALT As Integer = &H1
@@ -167,7 +166,7 @@ Public Class FloatingWindow
         Return False
     End Function
 
-    Public Sub RegisterGlobalHotkey(hotkey As List(Of Byte), hotkeyid As Integer) '注册全局热键,hotkeyid为热键ID,范围为9000-9006,调用时注意对应上面的处理过程
+    Public Sub RegisterGlobalHotkey(hotkey As List(Of Byte), hotkeyid As Integer) '注册全局热键，ID范围为9000-9004。
         '空列表静默跳过（不在启动时弹错误框）
         If hotkey Is Nothing OrElse hotkey.Count = 0 Then Return
         '验证快捷键合法性
@@ -203,8 +202,8 @@ Public Class FloatingWindow
     End Sub
 
     Public Sub UnregisterGlobalHotkey() '注销所有全局热键
-        '注销所有可能已注册的热键ID（9000-9006）
-        For i As Integer = 9000 To 9006
+        '注销所有可能已注册的热键ID（9000-9004）
+        For i As Integer = 9000 To 9004
             UnregisterHotKey(New WindowInteropHelper(Me).Handle, i)
         Next
         hotkeynum = 0
