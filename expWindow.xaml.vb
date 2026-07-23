@@ -32,4 +32,5 @@ Public Class expWindow
         CopyButton.Visibility = Visibility.Hidden '防止点按过多次引发剪贴板异常
 
     End Sub
+
 End Class

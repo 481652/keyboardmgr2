@@ -15,7 +15,7 @@ Imports System.Windows
 <Assembly: AssemblyDescription("键鼠管家-一个实用的连点连发工具")>
 <Assembly: AssemblyCompany("LCS")>
 <Assembly: AssemblyProduct("keyboardmgr2")>
-<Assembly: AssemblyCopyright("Copyright © LCS 2020-2024")>
+<Assembly: AssemblyCopyright("Copyright © LCS 2020-2026")>
 <Assembly: AssemblyTrademark("")>
 <Assembly: ComVisible(false)>
 
@@ -52,5 +52,5 @@ Imports System.Windows
 '      修订号
 '
 
-<Assembly: AssemblyVersion("2.1.0.1")>
-<Assembly: AssemblyFileVersion("2.1.0.1")>
+<Assembly: AssemblyVersion("2.2.0.0")>
+<Assembly: AssemblyFileVersion("2.2.0.0")>

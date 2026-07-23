@@ -23,12 +23,43 @@ Public Class FloatingWindow
     Private Const GWL_EXSTYLE As Integer = -20
     Private Const WS_EX_TOOLWINDOW As Integer = &H80
     Private Const WS_EX_APPWINDOW As Integer = &H40000
+    Private Const WS_EX_NOACTIVATE As Integer = &H8000000
+
+    <StructLayout(LayoutKind.Sequential)>
+    Private Structure NativePoint
+        Public X As Integer
+        Public Y As Integer
+    End Structure
+
+    <StructLayout(LayoutKind.Sequential)>
+    Private Structure NativeRect
+        Public Left As Integer
+        Public Top As Integer
+        Public Right As Integer
+        Public Bottom As Integer
+    End Structure
+
+    <DllImport("user32.dll")>
+    Private Shared Function GetCursorPos(ByRef point As NativePoint) As Boolean
+    End Function
+
+    <DllImport("user32.dll")>
+    Private Shared Function GetWindowRect(hwnd As IntPtr, ByRef rect As NativeRect) As Boolean
+    End Function
+
+    <DllImport("user32.dll")>
+    Private Shared Function SetWindowPos(hwnd As IntPtr, insertAfter As IntPtr, x As Integer, y As Integer,
+                                         width As Integer, height As Integer, flags As UInteger) As Boolean
+    End Function
+
+    Private Const SWP_NOSIZE As UInteger = &H1
+    Private Const SWP_NOZORDER As UInteger = &H4
+    Private Const SWP_NOACTIVATE As UInteger = &H10
 
 #End Region
 
 
 #Region "GlobalHotkey"
-    'todo:完善注册全局快捷键
     Private Const WM_HOTKEY As Integer = &H312 '定义热键消息
 
 
@@ -61,12 +92,15 @@ Public Class FloatingWindow
             Select Case hotkeyId
                 Case 9000 '停止操作
                     StopActions()
-                Case 9001
-                Case 9002
-                Case 9003
-                Case 9004
-                Case 9005
-                Case 9006
+                Case 9001 '摸鱼
+                    LoafModule.ToggleLoafMode()
+                Case 9002 '连点开关（热键按下时切换连点启动/停止）
+                    MainWindow1.Instance.ToggleClick()
+                Case 9003 '连发开关（热键按下时切换连发启动/停止）
+                    MainWindow1.Instance.ToggleSend()
+                Case 9004 '预留热键3（可自定义扩展）
+                Case 9005 '预留热键4（可自定义扩展）
+                Case 9006 '预留热键
                 Case Else
             End Select
         End If
@@ -74,45 +108,106 @@ Public Class FloatingWindow
         Return IntPtr.Zero
     End Function
 
+    '托盘图标实例，作为字段持有以便退出时释放、避免托盘残留幽灵图标
+    Private trayIcon As MyTrayicon
     Private hotkeynum As Integer = 0
+    Private Const TEMP_TEST_HOTKEY_ID As Integer = 9999 '临时测试用ID，不与9000-9006冲突
+
+    '修饰符常量
+    Private Const MOD_ALT As Integer = &H1
+    Private Const MOD_CONTROL As Integer = &H2
+    Private Const MOD_SHIFT As Integer = &H4
+    Private Const MOD_WIN As Integer = &H8
+
+    '将热键字节列表解析为(修饰符, 虚拟键码)，解析失败返回 Nothing
+    '支持任意数量的修饰键(0~4个)+单个主键，最多5个键
+    Private Function ParseHotkeyBytes(hotkey As List(Of Byte)) As Tuple(Of Integer, Integer)
+        If hotkey Is Nothing OrElse hotkey.Count = 0 OrElse hotkey.Count > 5 Then Return Nothing
+        '验证所有虚拟键码在合法范围内
+        For Each vk In hotkey
+            If vk < 1 OrElse vk > 254 Then Return Nothing
+        Next
+        Dim modifier As Integer = 0
+        Dim vkCode As Integer = 0
+        For Each vk In hotkey
+            Select Case vk
+                'Win 键（左右通用）
+                Case ConvertKeyToVirtualKeyCode(Key.LWin), ConvertKeyToVirtualKeyCode(Key.RWin)
+                    modifier = modifier Or MOD_WIN
+                'Ctrl 键（左右分开处理）
+                Case ConvertKeyToVirtualKeyCode(Key.LeftCtrl), ConvertKeyToVirtualKeyCode(Key.RightCtrl)
+                    modifier = modifier Or MOD_CONTROL
+                'Alt 键（左右分开处理）
+                Case ConvertKeyToVirtualKeyCode(Key.LeftAlt), ConvertKeyToVirtualKeyCode(Key.RightAlt)
+                    modifier = modifier Or MOD_ALT
+                'Shift 键（左右通用）
+                Case ConvertKeyToVirtualKeyCode(Key.LeftShift), ConvertKeyToVirtualKeyCode(Key.RightShift)
+                    modifier = modifier Or MOD_SHIFT
+                Case Else
+                    '非修饰键 → 主键（保留最后一个，以防有多个）
+                    vkCode = vk
+            End Select
+        Next
+        '必须有至少一个主键
+        If vkCode = 0 Then Return Nothing
+        Return Tuple.Create(modifier, vkCode)
+    End Function
+
+    '测试热键是否可被注册（即是否与其他软件冲突），返回 True 表示可用
+    Public Function TestHotkeyAvailability(hotkey As List(Of Byte)) As Boolean
+        Dim parsed = ParseHotkeyBytes(hotkey)
+        If parsed Is Nothing Then Return False
+        Dim hwnd As IntPtr = New WindowInteropHelper(Me).Handle
+        '尝试注册到临时ID，成功则立即注销
+        Dim success As Boolean = RegisterHotKey(hwnd, TEMP_TEST_HOTKEY_ID, parsed.Item1, parsed.Item2)
+        If success Then
+            UnregisterHotKey(hwnd, TEMP_TEST_HOTKEY_ID)
+            Return True
+        End If
+        Return False
+    End Function
 
     Public Sub RegisterGlobalHotkey(hotkey As List(Of Byte), hotkeyid As Integer) '注册全局热键,hotkeyid为热键ID,范围为9000-9006,调用时注意对应上面的处理过程
-        If hotkey.Count > 2 Or hotkey.Count = 1 Then
+        '空列表静默跳过（不在启动时弹错误框）
+        If hotkey Is Nothing OrElse hotkey.Count = 0 Then Return
+        '验证快捷键合法性
+        Dim parsed = ParseHotkeyBytes(hotkey)
+        If parsed Is Nothing Then
             ShowMyMessage("快捷键非法，请重新设置")
             Return
         End If
         Try
-            Select Case hotkey(0) '处理键修饰符,这里的hotkey为虚拟键码
-                Case ConvertKeyToVirtualKeyCode(Key.LWin)
-                    RegisterHotKey(New WindowInteropHelper(Me).Handle, hotkeyid, 8, hotkey(1))
-                Case ConvertKeyToVirtualKeyCode(Key.RWin)
-                    RegisterHotKey(New WindowInteropHelper(Me).Handle, hotkeyid, 8, hotkey(1))
-                Case ConvertKeyToVirtualKeyCode(Key.LeftCtrl)
-                    RegisterHotKey(New WindowInteropHelper(Me).Handle, hotkeyid, 2, hotkey(1))
-                Case ConvertKeyToVirtualKeyCode(Key.RightCtrl)
-                    RegisterHotKey(New WindowInteropHelper(Me).Handle, hotkeyid, 2, hotkey(1))
-                Case ConvertKeyToVirtualKeyCode(Key.LeftAlt)
-                    RegisterHotKey(New WindowInteropHelper(Me).Handle, hotkeyid, 1, hotkey(1))
-                Case ConvertKeyToVirtualKeyCode(Key.RightAlt)
-                    RegisterHotKey(New WindowInteropHelper(Me).Handle, hotkeyid, 1, hotkey(1))
-                Case ConvertKeyToVirtualKeyCode(Key.LeftShift)
-                    RegisterHotKey(New WindowInteropHelper(Me).Handle, hotkeyid, 4, hotkey(1))
-                Case ConvertKeyToVirtualKeyCode(Key.RightShift）
-                    RegisterHotKey(New WindowInteropHelper(Me).Handle, hotkeyid, 4, hotkey(1))
-                Case Else
-                    RegisterHotKey(New WindowInteropHelper(Me).Handle, hotkeyid, 0, hotkey(0)) '如果是其它的则无修饰符
-            End Select
+            Dim hwnd As IntPtr = New WindowInteropHelper(Me).Handle
+            '先注销可能已注册的同ID热键（避免重复注册时误判为冲突）
+            UnregisterHotKey(hwnd, hotkeyid)
+            '注册热键
+            Dim success As Boolean = RegisterHotKey(hwnd, hotkeyid, parsed.Item1, parsed.Item2)
+            If Not success Then
+                '注册失败，热键已被其他软件占用
+                Dim errCode As Integer = Marshal.GetLastWin32Error()
+                ShowMyMessage("无法注册快捷键：该快捷键已被其他程序占用（系统错误码：" & errCode & "），请更换快捷键后重试。")
+                Return
+            End If
             hotkeynum += 1
         Catch ex As Exception
             StopActions() '先停止操作
-            ShowExpdlg("错误8：程序无法注册快捷键，可能是快捷键非法，请更换快捷键。", ex.Message)
+            ShowExpdlg("错误8：程序无法注册快捷键，可能是快捷键非法，请更换快捷键。", ex.Message & vbLf & ex.StackTrace)
         End Try
     End Sub
 
+    '注销单个热键（按ID），用于功能关闭/切换时即时解除注册
+    Public Sub UnregisterSingleHotkey(hotkeyid As Integer)
+        Dim hwnd As IntPtr = New WindowInteropHelper(Me).Handle
+        UnregisterHotKey(hwnd, hotkeyid)
+        If hotkeynum > 0 Then hotkeynum -= 1
+    End Sub
+
     Public Sub UnregisterGlobalHotkey() '注销所有全局热键
-        For i As Integer = 9000 To 9000 + hotkeynum
+        '注销所有可能已注册的热键ID（9000-9006）
+        For i As Integer = 9000 To 9006
             UnregisterHotKey(New WindowInteropHelper(Me).Handle, i)
         Next
+        hotkeynum = 0
     End Sub
 
 #End Region
@@ -138,94 +233,204 @@ Public Class FloatingWindow
     End Property
 
     Public Sub Unfold()
-        BeginAnimation(TopProperty, showAnimation)
+        CancelFoldTimer()
+        If FloatingWindowState = 0 Then Return
+        If Not IsVisible Then Show()
+        MoveTo(0, False,
+            Sub()
+                Dispatcher.BeginInvoke(New Action(
+                    Sub()
+                        If FloatingWindowState = 2 AndAlso Not IsPointerOverWindow() Then ScheduleFold()
+                    End Sub))
+            End Sub)
+    End Sub
+
+    Public Sub ApplyDisplayMode(mode As Byte)
+        FloatingWindowState = mode
+        CancelFoldTimer()
+        If mode = 2 Then
+            pointerPollTimer.Change(0, 100)
+        Else
+            pointerPollTimer.Change(Threading.Timeout.Infinite, Threading.Timeout.Infinite)
+        End If
+        Select Case mode
+            Case 0
+                animationVersion += 1
+                BeginAnimation(TopProperty, Nothing)
+                Top = FoldedTop
+                foldTargeted = True
+                isFloatingWindowFolded = True
+                Hide()
+            Case 1
+                If Not IsVisible Then Show()
+                MoveTo(0, False)
+            Case 2
+                If Not IsVisible Then Show()
+                MoveTo(0, False,
+                    Sub()
+                        Dispatcher.BeginInvoke(New Action(
+                            Sub()
+                                If FloatingWindowState = 2 AndAlso Not IsPointerOverWindow() Then ScheduleFold()
+                            End Sub))
+                    End Sub)
+        End Select
     End Sub
 
 #Region "Animation"
 
-    Private slideDown As DoubleAnimation
-    Private slideUp As DoubleAnimation
-    Private hideAnimation As DoubleAnimation
-    Private showAnimation As DoubleAnimation
     Private isClosing As Boolean = False
+    Private animationVersion As Integer = 0
+    Private foldTargeted As Boolean = True
+    Private pointerPollTimer As Threading.Timer
+    Private foldDelayTimer As Threading.Timer
+    Private floatingHwnd As IntPtr = IntPtr.Zero
+    Private pointerWasOver As Boolean = False
+
+    Private ReadOnly Property FoldedTop As Double
+        Get
+            Dim windowHeight As Double = If(ActualHeight > 0, ActualHeight, Height)
+            Return -windowHeight + 8
+        End Get
+    End Property
 
     Public Sub New()
         InitializeComponent()
+        pointerPollTimer = New Threading.Timer(AddressOf PointerPollTimer_Tick, Nothing, Threading.Timeout.Infinite, Threading.Timeout.Infinite)
         Width = 800
         Height = 50
         WindowStyle = WindowStyle.None
-        AllowsTransparency = True
-        Background = Brushes.Transparent
-        Top = -Height
+        AllowsTransparency = False
+        Top = FoldedTop
         Left = (SystemParameters.WorkArea.Width - Width) / 2
         WindowStartupLocation = WindowStartupLocation.Manual
-
-        '初始化动画
-        slideDown = New DoubleAnimation() With {
-            .From = -Me.Height,
-            .To = 0,
-            .Duration = New Duration(TimeSpan.FromSeconds(0.5)),
-            .EasingFunction = New CubicEase() With {.EasingMode = EasingMode.EaseOut}
-        }
-
-        slideUp = New DoubleAnimation() With {
-            .From = 0,
-            .To = -Me.Height,
-            .Duration = New Duration(TimeSpan.FromSeconds(0.5)),
-            .EasingFunction = New CubicEase() With {.EasingMode = EasingMode.EaseIn}
-        }
-        '隐藏和显示动画
-        hideAnimation = New DoubleAnimation() With {
-            .From = 0,
-            .To = -Me.Height + 10,
-            .Duration = New Duration(TimeSpan.FromSeconds(0.5)),
-            .EasingFunction = New CubicEase() With {.EasingMode = EasingMode.EaseOut}
-        }
-        showAnimation = New DoubleAnimation() With {
-            .From = -Me.Height + 10,
-            .To = 0,
-            .Duration = New Duration(TimeSpan.FromSeconds(0.5)),
-            .EasingFunction = New CubicEase() With {.EasingMode = EasingMode.EaseIn}
-        }
-        '添加属性
         _instance = Me
+    End Sub
+
+    Private Sub MoveTo(targetTop As Double, folded As Boolean, Optional completed As Action = Nothing, Optional delay As TimeSpan = Nothing)
+        Dim currentTop As Double = Top
+        foldTargeted = folded
+        animationVersion += 1
+        Dim currentVersion As Integer = animationVersion
+        BeginAnimation(TopProperty, Nothing)
+        Top = currentTop
+
+        If Math.Abs(currentTop - targetTop) < 0.5 AndAlso delay = TimeSpan.Zero Then
+            Top = targetTop
+            isFloatingWindowFolded = folded
+            completed?.Invoke()
+            Return
+        End If
+
+        Dim animation As New DoubleAnimation() With {
+            .From = currentTop,
+            .To = targetTop,
+            .Duration = New Duration(TimeSpan.FromMilliseconds(350)),
+            .BeginTime = delay,
+            .FillBehavior = FillBehavior.Stop,
+            .EasingFunction = New CubicEase() With {.EasingMode = EasingMode.EaseInOut}
+        }
+        AddHandler animation.Completed,
+            Sub()
+                If currentVersion <> animationVersion Then Return
+                BeginAnimation(TopProperty, Nothing)
+                Top = targetTop
+                isFloatingWindowFolded = folded
+                completed?.Invoke()
+            End Sub
+        BeginAnimation(TopProperty, animation)
     End Sub
 #End Region
 
-#Region "detecting mouse"
-    'todo:修复这里的bug
+#Region "Detecting mouse"
+    Private Sub CancelFoldTimer()
+        foldDelayTimer?.Dispose()
+        foldDelayTimer = Nothing
+        animationVersion += 1
+        Dim currentTop As Double = Top
+        BeginAnimation(TopProperty, Nothing)
+        Top = currentTop
+    End Sub
+
+    Private Sub ScheduleFold()
+        If FloatingWindowState <> 2 OrElse IsPointerOverWindow() Then Return
+        foldDelayTimer?.Dispose()
+        foldDelayTimer = New Threading.Timer(
+            Sub()
+                If floatingHwnd = IntPtr.Zero OrElse IsPointerOverWindow() Then Return
+                Dim rect As NativeRect
+                If GetWindowRect(floatingHwnd, rect) Then
+                    Dim foldedY As Integer = -(rect.Bottom - rect.Top) + 8
+                    SetWindowPos(floatingHwnd, IntPtr.Zero, rect.Left, foldedY, 0, 0, SWP_NOSIZE Or SWP_NOZORDER Or SWP_NOACTIVATE)
+                    foldTargeted = True
+                    Dispatcher.BeginInvoke(New Action(
+                        Sub()
+                            animationVersion += 1
+                            BeginAnimation(TopProperty, Nothing)
+                            Top = FoldedTop
+                            isFloatingWindowFolded = True
+                        End Sub))
+                End If
+            End Sub, Nothing, TimeSpan.FromSeconds(3), Threading.Timeout.InfiniteTimeSpan)
+    End Sub
+
+    Private Sub PointerPollTimer_Tick(state As Object)
+        If floatingHwnd = IntPtr.Zero Then Return
+        Dim pointerOver As Boolean = IsPointerOverWindow()
+        If pointerOver = pointerWasOver Then Return
+        pointerWasOver = pointerOver
+
+        If Not pointerOver Then
+            Dispatcher.BeginInvoke(New Action(
+                Sub()
+                    If FloatingWindowState = 2 AndAlso Not foldTargeted Then ScheduleFold()
+                End Sub))
+            Return
+        End If
+
+        Dim rect As NativeRect
+        If GetWindowRect(floatingHwnd, rect) AndAlso rect.Top < 0 Then
+            SetWindowPos(floatingHwnd, IntPtr.Zero, rect.Left, 0, 0, 0, SWP_NOSIZE Or SWP_NOZORDER Or SWP_NOACTIVATE)
+        End If
+        Dispatcher.BeginInvoke(New Action(
+            Sub()
+                If FloatingWindowState = 2 Then
+                    animationVersion += 1
+                    BeginAnimation(TopProperty, Nothing)
+                    Top = 0
+                    foldTargeted = False
+                    isFloatingWindowFolded = False
+                End If
+            End Sub))
+    End Sub
+
+    Private Function IsPointerOverWindow() As Boolean
+        Dim point As NativePoint
+        Dim rect As NativeRect
+        If floatingHwnd = IntPtr.Zero OrElse Not GetCursorPos(point) OrElse Not GetWindowRect(floatingHwnd, rect) Then Return False
+        Return point.X >= rect.Left AndAlso point.X < rect.Right AndAlso point.Y >= rect.Top AndAlso point.Y < rect.Bottom
+    End Function
+
     Private Sub Window_MouseEnter(sender As Object, e As Input.MouseEventArgs)
-        '鼠标进入窗体
         If FloatingWindowState = 2 Then
-            BeginAnimation(TopProperty, showAnimation)
-            isFloatingWindowFolded = False
+            CancelFoldTimer()
+            MoveTo(0, False)
         End If
     End Sub
 
     Private Sub Window_MouseLeave(sender As Object, e As Input.MouseEventArgs)
         '鼠标离开窗体
         If FloatingWindowState = 2 Then
-            Dim delayTimer As New System.Windows.Threading.DispatcherTimer()
-            delayTimer.Interval = New TimeSpan(0, 0, 3) ' 延迟3秒后隐藏
-            AddHandler delayTimer.Tick, Sub()
-                                            BeginAnimation(TopProperty, hideAnimation)
-                                            delayTimer.Stop()
-                                        End Sub
-            delayTimer.Start()
-            isFloatingWindowFolded = True
+            ScheduleFold()
         End If
     End Sub
 #End Region
-    Private Sub Window_Loaded(sender As Object, e As RoutedEventArgs)
-        '窗体加载时播放弹出动画
-        BeginAnimation(TopProperty, slideDown)
-        '置托盘图标
-        Dim trayIcon As New MyTrayicon
 
-        '判断是否隐藏
-        If FloatingWindowState = 0 Then
-            Hide()
-        End If
+
+    Private Sub Window_Loaded(sender As Object, e As RoutedEventArgs)
+        '置托盘图标（作为字段持有，退出时 Dispose 防止托盘残留幽灵图标）
+        trayIcon = New MyTrayicon
+
+        ApplyDisplayMode(FloatingWindowState)
         If ReadSetting("IsFloatingWinTopmost", 0) = 1 Then
             MainWindow1.Instance.DoFloatingWindowTopmost.IsChecked = True
             FloatingWindow.Instance.SetWindowTopMost()
@@ -233,6 +438,7 @@ Public Class FloatingWindow
             MainWindow1.Instance.DoFloatingWindowTopmost.IsChecked = False
             FloatingWindow.Instance.SetWindowNotTopMost()
         End If
+        ThemeModule.ApplyWindowBackdrop(Me, AnimatedBorder, isMicaEnabled AndAlso ThemeModule.IsWindows11_22H2OrLater(), True)
     End Sub
 
     Private Sub Window_Closing(sender As Object, e As System.ComponentModel.CancelEventArgs)
@@ -241,12 +447,8 @@ Public Class FloatingWindow
             e.Cancel = True
             isClosing = True
 
-            '播放缩回动画
-            AddHandler slideUp.Completed, Sub()
-                                              '动画完成后关闭窗体
-                                              Close()
-                                          End Sub
-            BeginAnimation(TopProperty, slideUp)
+            CancelFoldTimer()
+            MoveTo(-Height, True, Sub() Close())
         End If
         UnregisterGlobalHotkey()
     End Sub
@@ -255,8 +457,9 @@ Public Class FloatingWindow
 
         '设置窗体样式，防止在ALT+TAB中显示
         Dim hwnd As IntPtr = New System.Windows.Interop.WindowInteropHelper(Me).Handle
+        floatingHwnd = hwnd
         Dim exStyle As Integer = GetWindowLong(hwnd, GWL_EXSTYLE)
-        SetWindowLong(hwnd, GWL_EXSTYLE, exStyle Or WS_EX_TOOLWINDOW And Not WS_EX_APPWINDOW)
+        SetWindowLong(hwnd, GWL_EXSTYLE, (exStyle Or WS_EX_TOOLWINDOW Or WS_EX_NOACTIVATE) And Not WS_EX_APPWINDOW)
         '设置消息过滤器
         Dim hwndSource As HwndSource = HwndSource.FromVisual(Me)
         hwndSource.AddHook(AddressOf WndProc)
@@ -267,6 +470,7 @@ Public Class FloatingWindow
     End Sub
 
     Public Sub StopApp() '退出程序方法
+        If LoafModule.InLoafMode Then LoafModule.ExitLoafMode()
         Close()
         Dim timer As New System.Timers.Timer(1000) '在悬浮窗缩回后0.5秒时退出
         AddHandler timer.Elapsed, AddressOf Timer_Elapsed
@@ -276,6 +480,7 @@ Public Class FloatingWindow
     End Sub
 
     Private Sub Timer_Elapsed(sender As Object, e As ElapsedEventArgs)
+        trayIcon?.Dispose()
         Environment.Exit(0)
     End Sub
 
@@ -284,7 +489,9 @@ Public Class FloatingWindow
     End Sub
 
     Private Sub StopActions() '停止连点连发等
+        If LoafModule.InLoafMode Then LoafModule.ExitLoafMode()
         MainWindow1.Instance.StopClick()
+        MainWindow1.Instance.StopSend()
         MainWindow1.Instance.Show()
         FloatingWindow_Reset()
     End Sub
@@ -295,6 +502,7 @@ Public Class FloatingWindow
         End If
         MainWindow1.Instance.Show()
         MainWindow1.Instance.Activate()
+        Dim hWnd As IntPtr = New WindowInteropHelper(Me).Handle
     End Sub
 
     Public Sub FloatingWindow_Reset()
@@ -304,11 +512,23 @@ Public Class FloatingWindow
         sendButton.Visibility = Visibility.Visible
     End Sub
 
+    Public Sub FloatingWindowEvent_Send()
+        titleLabel.Content = "键鼠管家-连发中"
+        stopButton.Visibility = Visibility.Visible
+        clickButton.Visibility = Visibility.Hidden
+        sendButton.Visibility = Visibility.Hidden
+        If FloatingWindowState <> 0 Then
+            If Not IsVisible Then Show()
+            Unfold()
+        End If
+    End Sub
+
     Public Sub FloatingWindowEvent_Click()
         titleLabel.Content = "键鼠管家-连点中"
         stopButton.Visibility = Visibility.Visible
         clickButton.Visibility = Visibility.Hidden
         sendButton.Visibility = Visibility.Hidden
+        If FloatingWindowState <> 0 Then Unfold()
         RegisterGlobalHotkey(stopActHotkeys, 9000)
     End Sub
 

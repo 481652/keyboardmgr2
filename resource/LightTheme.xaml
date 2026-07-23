@@ -7,6 +7,10 @@
     <!-- 窗体资源 -->
     <SolidColorBrush x:Key="backgroundColor1" Color="#FFFEFEFE"/>
     <SolidColorBrush x:Key="foregroundColor1" Color="Black"/>
+    <SolidColorBrush x:Key="ControlFillColor" Color="#E8FFFFFF"/>
+    <SolidColorBrush x:Key="CardFillColor" Color="#B8FFFFFF"/>
+    <SolidColorBrush x:Key="AccentColor" Color="#0067C0"/>
+    <SolidColorBrush x:Key="AccentHoverColor" Color="#1975C5"/>
     <!-- textblock资源 -->
     <Style TargetType="TextBlock">
         <Setter Property="Foreground" Value="Black"></Setter>
@@ -92,7 +96,7 @@
                          Background="{TemplateBinding Background}" 
                          BorderBrush="{TemplateBinding BorderBrush}" 
                          BorderThickness="1" 
-                         CornerRadius="4">
+                         CornerRadius="6">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <ControlTemplate.Triggers>
@@ -106,6 +110,40 @@
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="border" Property="BorderBrush" Value="#005A9E"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="AccentButton" TargetType="Button" BasedOn="{StaticResource DefaultButton}">
+        <Setter Property="Background" Value="{DynamicResource AccentColor}"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
+    </Style>
+    <Style x:Key="CardBorderStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource CardFillColor}"/>
+        <Setter Property="BorderBrush" Value="#19000000"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+    </Style>
+    <Style TargetType="ListBoxItem">
+        <Setter Property="Padding" Value="10,7"/>
+        <Setter Property="Margin" Value="2"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="ItemBorder" Background="Transparent" CornerRadius="5" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="ItemBorder" Property="Background" Value="#0F000000"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="ItemBorder" Property="Background" Value="#260067C0"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -233,7 +271,7 @@
                 </DataTemplate>
             </Setter.Value>
         </Setter>
-        <Setter Property="Padding" Value="5"/>
+        <Setter Property="Padding" Value="4"/>
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="BorderBrush" Value="Transparent"/>
         <Setter Property="Margin" Value="0,0,4,0"/>
@@ -241,13 +279,13 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TabItem">
-                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" Padding="{TemplateBinding Padding}" CornerRadius="4,4,0,0" Margin="0,0,4,0">
+                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" Padding="{TemplateBinding Padding}" CornerRadius="6" Margin="0,0,4,0">
                         <ContentPresenter x:Name="ContentSite" VerticalAlignment="Center" HorizontalAlignment="Center" ContentSource="Header" Margin="12,2,12,2"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter Property="Background" Value="#67DFFF"/>
-                            <Setter Property="BorderBrush" Value="#67DFFF"/>
+                            <Setter Property="Background" Value="#220067C0"/>
+                            <Setter Property="BorderBrush" Value="#550067C0"/>
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter Property="BorderBrush" Value="#3D3D3D"/>
@@ -595,7 +633,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="{DynamicResource {DynamicResource ButtonHoverColor}}" TargetName="border"/>
+                            <Setter Property="Background" Value="{DynamicResource ButtonHoverColor}" TargetName="border"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

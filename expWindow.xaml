@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:keyboardmgr2"
         mc:Ignorable="d"
-        Background="{DynamicResource backgroundColor1}" Title="错误" Height="414" Width="310" WindowStyle="ToolWindow" ResizeMode="NoResize" Closing="Window_Closing">
+        Background="{DynamicResource backgroundColor1}" Title="错误" Height="415" Width="500" WindowStyle="ToolWindow" ResizeMode="NoResize" Closing="Window_Closing">
 
     <Grid >
         <Grid.RowDefinitions>
@@ -26,7 +26,7 @@
             VerticalAlignment="Top" 
             Height="261" 
             Margin="22,49,32,0" FontFamily="Microsoft YaHei UI" FontSize="12" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto" Grid.RowSpan="2"><Run Text=""/></TextBlock>
-        <Button Style="{DynamicResource DefaultButton}" Content="退出" HorizontalAlignment="Left" Margin="175,258,0,0" Grid.Row="1" VerticalAlignment="Top" Height="43" Width="93" Click="Button_Click"/>
+        <Button Style="{DynamicResource DefaultButton}" Content="退出" HorizontalAlignment="Left" Margin="385,258,0,0" Grid.Row="1" VerticalAlignment="Top" Height="43" Width="93" Click="Button_Click"/>
         <Button x:Name="CopyButton" Style="{DynamicResource DefaultButton}" Content="{DynamicResource Icon.Copy}" HorizontalAlignment="Left" Margin="22,263,0,0" Grid.Row="1" VerticalAlignment="Top" Height="33" Width="40" Click="CopyButton_Click"/>
         <Popup x:Name="MyPopup" HorizontalAlignment="Left" PlacementTarget ="{Binding ElementName=CopyButton}" VerticalAlignment="Top" StaysOpen="False" Width="50" Height="70">
             <Grid Background="{DynamicResource ButtonBackgroundColor}" Height="30" Width="70">

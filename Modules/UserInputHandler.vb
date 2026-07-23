@@ -5,15 +5,16 @@ Imports System.Runtime.InteropServices
 
 
 Module UserInputHandler
+    '实现KeyTextBox的功能
 #Region "KeyTextbox"
-
 
     '初始化TextBox的键盘事件处理
     Public Sub InitializeTextBoxKeyHandler(textBox As TextBox)
         AddHandler textBox.PreviewKeyDown, AddressOf TextBox_PreviewKeyDown
     End Sub
+
     Private shared_keylog As List(Of Key)
-    '处理TextBox的PreviewKeyDown事件
+
     Private Sub TextBox_PreviewKeyDown(sender As Object, e As KeyEventArgs)
         Dim textBox As TextBox = CType(sender, TextBox)
         '记录按键的列表
@@ -28,6 +29,7 @@ Module UserInputHandler
         End If
         If (Keyboard.Modifiers And ModifierKeys.Shift) = ModifierKeys.Shift Then
             keyPressed_Str = "Shift+" & keyPressed_Str
+            keylog.Add(Key.LeftShift)
         End If
         If (Keyboard.Modifiers And ModifierKeys.Alt) = ModifierKeys.Alt Then
             keyPressed_Str = "Alt+" & keyPressed_Str
@@ -37,8 +39,8 @@ Module UserInputHandler
             keyPressed_Str = "Win+" & keyPressed_Str
             keylog.Add(Key.LWin)
         End If
-        '微调，去除重复键
-        keyPressed_Str = keyPressed_Str.Replace("+LeftCtrl", "").Replace("+RightCtrl", "").Replace("+LeftShift", "").Replace("+System", "").Replace("LWin", "Win").Replace("RWin", "Win").Replace("Return", "Enter")
+        '微调，去除重复的修饰键名
+        keyPressed_Str = keyPressed_Str.Replace("+LeftCtrl", "").Replace("+RightCtrl", "").Replace("+LeftAlt", "").Replace("+RightAlt", "").Replace("+LeftShift", "").Replace("+RightShift", "").Replace("+System", "").Replace("LWin", "Win").Replace("RWin", "Win").Replace("Return", "Enter")
         textBox.Text = keyPressed_Str
         shared_keylog = keylog
         e.Handled = True
@@ -83,6 +85,103 @@ Module UserInputHandler
         Next
     End Sub
 
+    <StructLayout(LayoutKind.Sequential)>
+    Private Structure KeyboardInput
+        Public VirtualKey As UShort
+        Public ScanCode As UShort
+        Public Flags As UInteger
+        Public Time As UInteger
+        Public ExtraInfo As IntPtr
+    End Structure
+
+    <StructLayout(LayoutKind.Explicit)>
+    Private Structure InputUnion
+        <FieldOffset(0)>
+        Public Keyboard As KeyboardInput
+        <FieldOffset(0)>
+        Public Mouse As MouseInput
+    End Structure
+
+    <StructLayout(LayoutKind.Sequential)>
+    Private Structure MouseInput
+        Public X As Integer
+        Public Y As Integer
+        Public MouseData As UInteger
+        Public Flags As UInteger
+        Public Time As UInteger
+        Public ExtraInfo As IntPtr
+    End Structure
+
+    <StructLayout(LayoutKind.Sequential)>
+    Private Structure Input
+        Public Type As UInteger
+        Public Data As InputUnion
+    End Structure
+
+    <DllImport("user32.dll", SetLastError:=True)>
+    Private Function SendInput(inputCount As UInteger, inputs() As Input, inputSize As Integer) As UInteger
+    End Function
+
+    Public Sub SendUnicodeText(text As String)
+        Const INPUT_KEYBOARD As UInteger = 1
+        Const KEYEVENTF_KEYUP As UInteger = &H2
+        Const KEYEVENTF_UNICODE As UInteger = &H4
+
+        Dim inputList As New List(Of Input)
+        Dim previousWasCarriageReturn As Boolean = False
+        For Each character As Char In text
+            If character = ControlChars.Cr OrElse character = ControlChars.Lf Then
+                If Not (character = ControlChars.Lf AndAlso previousWasCarriageReturn) Then
+                    AddVirtualKeyInputs(inputList, 13)
+                End If
+                previousWasCarriageReturn = character = ControlChars.Cr
+                Continue For
+            End If
+            previousWasCarriageReturn = False
+            If character = ControlChars.Tab Then
+                AddVirtualKeyInputs(inputList, 9)
+                Continue For
+            End If
+
+            Dim keyDown As New Input With {.Type = INPUT_KEYBOARD}
+            keyDown.Data.Keyboard.ScanCode = Convert.ToUInt16(character)
+            keyDown.Data.Keyboard.Flags = KEYEVENTF_UNICODE
+            inputList.Add(keyDown)
+            Dim keyUp As Input = keyDown
+            keyUp.Data.Keyboard.Flags = KEYEVENTF_UNICODE Or KEYEVENTF_KEYUP
+            inputList.Add(keyUp)
+        Next
+
+        SendInputEvents(inputList)
+    End Sub
+
+    Public Sub SendEnterKey()
+        Dim inputList As New List(Of Input)
+        AddVirtualKeyInputs(inputList, 13)
+        SendInputEvents(inputList)
+    End Sub
+
+    Private Sub SendInputEvents(inputList As List(Of Input))
+        If inputList.Count = 0 Then Return
+        For Each inputEvent As Input In inputList
+            Dim inputs() As Input = {inputEvent}
+            If SendInput(1, inputs, Marshal.SizeOf(GetType(Input))) <> 1 Then
+                Throw New ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "无法向目标窗口发送按键")
+            End If
+        Next
+    End Sub
+
+    Private Sub AddVirtualKeyInputs(inputList As List(Of Input), virtualKey As UShort)
+        Const INPUT_KEYBOARD As UInteger = 1
+        Const KEYEVENTF_KEYUP As UInteger = &H2
+        Dim keyDown As New Input With {.Type = INPUT_KEYBOARD}
+        keyDown.Data.Keyboard.VirtualKey = virtualKey
+        inputList.Add(keyDown)
+        Dim keyUp As Input = keyDown
+        keyUp.Data.Keyboard.Flags = KEYEVENTF_KEYUP
+        inputList.Add(keyUp)
+    End Sub
+
 #End Region
 
 
@@ -117,7 +216,6 @@ Module UserInputHandler
     Public Const MOUSEEVENTF_RIGHTDOWN = &H8 '模拟鼠标右键按下
     Public Const MOUSEEVENTF_RIGHTUP = &H10 '模拟鼠标右键释放
     Public Declare Function GetCursorPos Lib "user32" (ByRef lpPoint As POINTAPI) As Long '全屏坐标声明
-    Public Declare Function ScreenToClient Lib "user32.dll" (hwnd As Integer, ByRef lpPoint As POINTAPI) As Integer '窗口坐标声明
     Public Structure POINTAPI '声明坐标变量
         Public x As Integer '声明坐标变量为32位
         Public y As Integer '声明坐标变量为32位
@@ -130,26 +228,14 @@ Module UserInputHandler
 #Region "SetCursorPos"
 
     <DllImport("user32.dll", SetLastError:=True)>
-        Private Function GetForegroundWindow() As IntPtr
-        End Function
-
-    <DllImport("user32.dll", SetLastError:=True)>
-    Private Function ScreenToClient(hWnd As IntPtr, ByRef lpPoint As POINTAPI) As Boolean
-    End Function
-
-    <DllImport("user32.dll", SetLastError:=True)>
     Private Sub SetCursorPos(x As Integer, y As Integer)
     End Sub
 
 
+    '入参 (x, y) 为屏幕绝对坐标。SetCursorPos 本身接收屏幕坐标，
+    '不能先经 ScreenToClient 转成客户区坐标，否则定位错误。
     Public Sub SetCursorPosition(x As Integer, y As Integer)
-        Dim pt As New POINTAPI
-        pt.x = x
-        pt.y = y
-        Dim hWnd As IntPtr = GetForegroundWindow()
-        If ScreenToClient(hWnd, pt) Then
-            SetCursorPos(pt.x, pt.y)
-        End If
+        SetCursorPos(x, y)
     End Sub
 
 
@@ -185,8 +271,10 @@ Module UserInputHandler
     Private Function GetCursorPos(ByRef lpPoint As Point) As Boolean
     End Function
 
+    '注意：Win32 WindowFromPoint 按值接收 8 字节 POINT(两个 32 位整数)，
+    '不能用 System.Windows.Point(两个 Double,16 字节)，否则 marshalling 数据错位。
     <DllImport("user32.dll", SetLastError:=True)>
-    Public Function WindowFromPoint(pt As Point) As IntPtr
+    Public Function WindowFromPoint(pt As POINTAPI) As IntPtr
     End Function
 
     Private Const IDC_HAND As Integer = 32649

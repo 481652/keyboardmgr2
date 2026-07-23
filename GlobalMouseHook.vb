@@ -10,14 +10,14 @@ Public Class GlobalMouseHook
     '鼠标钩子句柄
     Private mouseHook As IntPtr = IntPtr.Zero
 
-    '鼠标钩子回调函数
+    '鼠标钩子回调函数（作为类字段持有，在 InstallHook 期间保持引用，防止被 GC 回收）
     Private mouseDelegate As HookCallback
 
     '安装钩子
     Public Sub InstallHook()
         mouseDelegate = New HookCallback(AddressOf MouseHookProc)
         mouseHook = SetHook(mouseDelegate)
-        GCHandle.Alloc(mouseDelegate) '防止垃圾回收引发bug  
+        'mouseDelegate 已是类字段，钩子存续期间不会被 GC，无需额外 GCHandle.Alloc
     End Sub
 
     '卸载钩子
@@ -34,18 +34,14 @@ Public Class GlobalMouseHook
         End Using
     End Function
 
-    '鼠标钩子回调函数
-    Private mouseHookProcDelegate As HookCallback = AddressOf MouseHookProc
-
     Private Function MouseHookProc(nCode As Integer, wParam As IntPtr, lParam As IntPtr) As IntPtr
         If nCode >= 0 Then
             If wParam = CType(WM_LBUTTONDOWN, IntPtr) Then
                 '将 lParam 转换为 MSLLHOOKSTRUCT 结构体
                 Dim hookStruct As MSLLHOOKSTRUCT = Marshal.PtrToStructure(Of MSLLHOOKSTRUCT)(lParam)
-                '访问 hookStruct 中的字段
-                Dim p As New GlobalMouseHook.POINT With {.x = hookStruct.pt.x, .y = hookStruct.pt.y}
-                Dim systemPoint As New Windows.Point(Convert.ToDouble(p.x), Convert.ToDouble(p.y))
-                Dim hWnd As IntPtr = WindowFromPoint(systemPoint)
+                '访问 hookStruct 中的字段，使用 8 字节的 POINTAPI 传给 WindowFromPoint
+                Dim p As New POINTAPI With {.x = hookStruct.pt.x, .y = hookStruct.pt.y}
+                Dim hWnd As IntPtr = WindowFromPoint(p)
                 '检查句柄是否有效
                 If hWnd <> IntPtr.Zero Then
                     RaiseEvent WindowSelected(hWnd)

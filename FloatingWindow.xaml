@@ -5,17 +5,20 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:keyboardmgr2"        
         mc:Ignorable="d"
-        Title="键鼠管家悬浮窗" Height="50" Width="800" ResizeMode="NoResize" ShowInTaskbar="False" WindowStyle="None" Loaded="Window_Loaded"
-        Closing="Window_Closing" MouseEnter="Window_MouseEnter" MouseLeave="Window_MouseLeave">
+        Title="键鼠管家悬浮窗" Height="50" Width="800" ResizeMode="NoResize" ShowInTaskbar="False" ShowActivated="False" WindowStyle="None" Loaded="Window_Loaded"
+        Closing="Window_Closing" MouseEnter="Window_MouseEnter" MouseLeave="Window_MouseLeave" AllowsTransparency="False"
+        Background="{DynamicResource backgroundColor1}">
     <Grid>
-        <Border x:Name="AnimatedBorder" CornerRadius="10" Background="{DynamicResource backgroundColor1}" Height="50" Width="800"
-                BorderBrush="{DynamicResource ButtonBorderColor}" BorderThickness="1">
+        <Border x:Name="AnimatedBorder" CornerRadius="8" Height="50" Width="800"
+                BorderBrush="{DynamicResource ButtonBorderColor}" BorderThickness="1" Background="{DynamicResource backgroundColor1}">
             <Grid>
                 <Image Margin="7,4,749,4" Source="/appiconnew.ico" MouseUp="Image_MouseUp"/>
                 <Button Style="{DynamicResource DefaultButton}" Content="{DynamicResource Icon.Close}" Margin="743,2,10,2" Height="40" Width="40" Click="Button_Click" BorderBrush="{x:Null}" Background="{x:Null}" />
                 <Button x:Name="stopButton" Style="{DynamicResource DefaultButton}" Content="{DynamicResource Icon.Stop}" Margin="700,4,58,4" Height="40" Width="40" Click="StopButton_Click" BorderBrush="{x:Null}" Visibility="Hidden" Background="{x:Null}" />
                 <Button x:Name="clickButton" Style="{DynamicResource DefaultButton}" Content="{DynamicResource Icon.Click}" Margin="598,4,160,4" Height="40" Width="40" Click="ClickButton_Click" BorderBrush="{x:Null}" Background="{x:Null}" />
-                <Button x:Name="sendButton" Style="{DynamicResource DefaultButton}" Content="{DynamicResource Icon.Send}" Margin="643,4,115,4" Height="40" Width="40" Click="SendButton_Click" BorderBrush="{x:Null}" Background="{x:Null}" />
+                <Button x:Name="sendButton" Style="{DynamicResource DefaultButton}" Content="{DynamicResource Icon.Send}"
+                        Margin="643,4,115,4" Height="40" Width="40" Click="SendButton_Click"
+                        BorderBrush="{x:Null}" Background="{x:Null}" ToolTip="打开列表连发" />
                 <Label x:Name="titleLabel" Content="键鼠管家" FontSize="18" HorizontalAlignment="Left" Margin="53,0,0,0" VerticalAlignment="Center" Width="259" FontFamily="Microsoft YaHei UI Light" />
             </Grid>
         </Border>

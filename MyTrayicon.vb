@@ -5,10 +5,19 @@ Imports ContextMenu = System.Windows.Controls.ContextMenu
 Imports MenuItem = System.Windows.Controls.MenuItem
 
 Public Class MyTrayicon
+    Implements IDisposable
     Private notifyIcon As NotifyIcon
 
     Public Sub New()
         CreateTrayIcon()
+    End Sub
+
+    Public Sub Dispose() Implements IDisposable.Dispose
+        If notifyIcon IsNot Nothing Then
+            notifyIcon.Visible = False
+            notifyIcon.Dispose()
+            notifyIcon = Nothing
+        End If
     End Sub
 
     Private Sub CreateTrayIcon()
@@ -60,15 +69,16 @@ Public Class MyTrayicon
         AddHandler menuItem5.Click, AddressOf MenuOption5_Click
         Dim menuItem6 As New MenuItem() With {.Header = "退出程序"}
         AddHandler menuItem6.Click, AddressOf MenuOption6_Click
-        For Each item In contextMenu.Items
-            item.Style = menuItemStyle
-        Next
         contextMenu.Items.Add(menuItem1)
         contextMenu.Items.Add(menuItem2)
         contextMenu.Items.Add(menuItem3)
         contextMenu.Items.Add(menuItem4)
         contextMenu.Items.Add(menuItem5)
         contextMenu.Items.Add(menuItem6)
+        '必须在添加菜单项之后再遍历应用样式，否则集合为空、样式不生效
+        For Each item As MenuItem In contextMenu.Items
+            item.Style = menuItemStyle
+        Next
         contextMenu.IsOpen = True
     End Sub
 

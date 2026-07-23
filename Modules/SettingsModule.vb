@@ -11,10 +11,10 @@ Module SettingsModule
                 regKey.SetValue(key, value)
             End Using
         Catch ex As Exception
-            ShowExpdlg("错误3：程序在写入注册表设置时出现异常，可能是无权限或杀软误拦！", ex.Message)
+            ShowExpdlg("错误3：程序在写入注册表设置时出现异常，可能是无权限或杀软误拦！", ex.Message & vbLf & ex.StackTrace)
         End Try
     End Sub
-#Disable Warning BC42105
+
     '读取设置
     Public Function ReadSetting(key As String, defaultValue As Object) As Object
         Try
@@ -26,10 +26,10 @@ Module SettingsModule
                 End If
             End Using
         Catch ex As Exception
-            ShowExpdlg("错误4：程序在读取注册表设置时出现异常，可能是无权限或杀软误拦！", ex.Message)
+            ShowExpdlg("错误4：程序在读取注册表设置时出现异常，可能是无权限或杀软误拦！", ex.Message & vbLf & ex.StackTrace)
+            Return defaultValue
         End Try
     End Function
-#Enable Warning
 
     '删除设置
     Public Sub DeleteSetting(key As String)
@@ -38,7 +38,7 @@ Module SettingsModule
                 regKey?.DeleteValue(key, False)
             End Using
         Catch ex As Exception
-            ShowExpdlg("错误5：程序在删除注册表设置时出现异常，可能是无权限或杀软误拦！", ex.Message)
+            ShowExpdlg("错误5：程序在删除注册表设置时出现异常，可能是无权限或杀软误拦！", ex.Message & vbLf & ex.StackTrace)
         End Try
     End Sub
 
@@ -49,11 +49,21 @@ Module SettingsModule
                 regKey?.DeleteSubKeyTree("LCS\keyboardmgr", False)
             End Using
         Catch ex As Exception
-            ShowExpdlg("错误5：程序在删除注册表设置时出现异常，可能是无权限或杀软误拦！", ex.Message)
+            ShowExpdlg("错误5：程序在删除注册表设置时出现异常，可能是无权限或杀软误拦！", ex.Message & vbLf & ex.StackTrace)
         End Try
     End Sub
 
-    '加载设置中的按键
+    '判断解析结果是否等价于无效/None
+    '注意: 旧代码用 IsNot New List(Of Key) From {Key.None} 做引用比较，
+    '       New List 每次都产生新引用，IsNot 恒为 True、Is 恒为 False，
+    '       导致加载失败检测形同虚设。以下函数做值判断。
+    Public Function IsNoneKeyList(keys As List(Of Key)) As Boolean
+        If keys Is Nothing Then Return True
+        If keys.Count = 0 Then Return True
+        If keys.Count = 1 AndAlso keys(0) = Key.None Then Return True
+        Return False
+    End Function
+        '加载设置中的按键
     Public Function LoadKeyData(KeysStr As String) As List(Of Key)
         Dim savedKeys As New List(Of Key)
         If KeysStr.Length > 0 Then
@@ -69,6 +79,9 @@ Module SettingsModule
                     Continue For
                 ElseIf KeyStr = "Win" Then
                     savedKeys.Add(Key.LWin)
+                    Continue For
+                ElseIf KeyStr = "Esc" Then
+                    savedKeys.Add(Key.Escape)
                     Continue For
                 End If
                 savedKeys.Add([Enum].Parse(GetType(Key), KeyStr))

@@ -1,13 +1,21 @@
 ﻿'处理对话框及悬浮窗的相关功能
 
 Module DlgModule
+
     Public FloatingWindowState As Byte = 1 '悬浮窗状态，0为隐藏，1为显示，2为自动收缩
     Public isFloatingWindowFolded As Boolean = False '悬浮窗是否折叠
 
     '需要跨窗体使用的快捷键
     Public stopActHotkeys As New List(Of Byte)
+    Public loafHotkeys As New List(Of Byte)
+    '热键 ID 9002-9005 对应的快捷键（连点开关、连发开关、预留3、预留4）
+    Public stopClickHotkeys As New List(Of Byte)
+    Public rapidFireHotkeys As New List(Of Byte)
+    Public customHotkeys3 As New List(Of Byte)
+    Public customHotkeys4 As New List(Of Byte)
 #Region "DialogsAndMessages"
     Public Sub ShowExpdlg(ex As String, text As String) 'ex为提示信息，text为异常内容（可空）
+
         Dim frm As New expWindow()
         frm.TextBlock1.Inlines.Add("错误信息：" & vbNewLine)
         frm.TextBlock1.Inlines.Add(ex & vbNewLine)
