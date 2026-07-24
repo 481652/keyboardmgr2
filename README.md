@@ -6,7 +6,7 @@
 
 - **VS 2022** 或 **MSBuild 17.x**
 - **目标框架**: .NET Framework 4.7.2
-- **语言**: VB.NET / WPF + WinForms(托盘)
+- **语言**: VB.NET / WPF + WinForms(窗体选取器)
 - 解决方案包含两个工程：`keyboardmgr2`（主程序 WPF）和 `WindowSelector`（WinForms 选择器类库）
 
 ## 依赖包 (NuGet)
