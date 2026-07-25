@@ -19,7 +19,8 @@
             <ColumnDefinition Width="82*"/>
             <ColumnDefinition Width="73*"/>
         </Grid.ColumnDefinitions>
-        <TabControl x:Name="TabControl1" FontSize="14" Grid.ColumnSpan="2" Grid.RowSpan="2" Background="{DynamicResource backgroundColor1}">
+        <TabControl x:Name="TabControl1" FontSize="14" Grid.ColumnSpan="2" Grid.RowSpan="2"
+                    Background="{DynamicResource backgroundColor1}" SelectionChanged="TabControl1_SelectionChanged">
 
             <TabItem Header="欢迎">
                 <Grid Background="{DynamicResource backgroundColor1}">
@@ -101,9 +102,18 @@
                         <ColumnDefinition Width="12"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
+                    <Grid.Resources>
+                        <Style x:Key="RapidFireItemCommandButton" TargetType="Button" BasedOn="{StaticResource DefaultButton}">
+                            <Setter Property="Width" Value="28"/>
+                            <Setter Property="Height" Value="28"/>
+                            <Setter Property="Padding" Value="0"/>
+                            <Setter Property="FontFamily" Value="{DynamicResource iconFont}"/>
+                            <Setter Property="FontSize" Value="15"/>
+                        </Style>
+                    </Grid.Resources>
 
                     <StackPanel Grid.ColumnSpan="3" Margin="2,0,0,12">
-                        <TextBlock Text="连发" FontSize="24" FontWeight="Light"/>
+                        <TextBlock Text="连发" FontSize="24" FontWeight="Light" Margin="0,5,0,0"/>
                         <TextBlock Text="按列表顺序逐条发送，每条发送后自动按 Enter" Opacity="0.68" Margin="0,3,0,0"/>
                     </StackPanel>
 
@@ -114,18 +124,21 @@
                                 <RowDefinition Height="*"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
-                            <TextBlock x:Name="TxtItemCounter" Text="0 个条目" FontWeight="SemiBold" Margin="12,10,12,8"/>
+                            <Grid Margin="12,10,12,8">
+                                <TextBlock Text="连发项" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="TxtItemCounter" Text="0 项" HorizontalAlignment="Right" Opacity="0.58" FontSize="12" VerticalAlignment="Center"/>
+                            </Grid>
                             <ListBox x:Name="SendItemList" Grid.Row="1" Margin="6,0" BorderThickness="0" Background="Transparent"
                                      SelectionChanged="SendItemList_SelectionChanged"/>
-                            <Grid Grid.Row="2" Margin="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <Button x:Name="BtnAddItem" Style="{DynamicResource DefaultButton}" Content="新增" Height="32" Click="BtnAddItem_Click"/>
-                                <Button Grid.Column="1" Style="{DynamicResource DefaultButton}" Content="↑" Width="34" Height="32" Margin="6,0,0,0" Click="BtnMoveItemUp_Click"/>
-                                <Button Grid.Column="2" Style="{DynamicResource DefaultButton}" Content="↓" Width="34" Height="32" Margin="6,0,0,0" Click="BtnMoveItemDown_Click"/>
+                            <Grid Grid.Row="2" Margin="8,7,8,8">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                    <Button x:Name="BtnAddItem" Style="{StaticResource RapidFireItemCommandButton}" Content="&#xE710;" ToolTip="新增文字项" Click="BtnAddItem_Click"/>
+                                    <Button Style="{StaticResource RapidFireItemCommandButton}" Content="&#xE91B;" ToolTip="插入图片" Margin="5,0,0,0" Click="BtnAddImage_Click"/>
+                                    <Border Width="1" Height="18" Background="{DynamicResource ButtonBorderColor}" Opacity="0.45" Margin="7,0,2,0"/>
+                                    <Button x:Name="BtnMoveItemUp" Style="{StaticResource RapidFireItemCommandButton}" Content="&#xE70E;" ToolTip="上移当前项" Margin="5,0,0,0" Click="BtnMoveItemUp_Click"/>
+                                    <Button x:Name="BtnMoveItemDown" Style="{StaticResource RapidFireItemCommandButton}" Content="&#xE70D;" ToolTip="下移当前项" Margin="5,0,0,0" Click="BtnMoveItemDown_Click"/>
+                                    <Button x:Name="BtnDeleteItem" Style="{StaticResource RapidFireItemCommandButton}" Content="&#xE74D;" ToolTip="删除当前项" Margin="5,0,0,0" Click="BtnDeleteItem_Click"/>
+                                </StackPanel>
                             </Grid>
                         </Grid>
                     </Border>
@@ -135,7 +148,6 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
-                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <TextBlock Text="条目内容" FontWeight="SemiBold" Margin="0,0,0,8"/>
                             <Grid Grid.Row="1">
@@ -145,9 +157,15 @@
                                              AcceptsTab="True" TextChanged="RichTextBox1_TextChanged"/>
                                 <TextBlock x:Name="SendEditorWatermark" Text="输入要发送的文字…" Opacity="0.5" Margin="11,10"
                                            VerticalAlignment="Top" IsHitTestVisible="False"/>
+                                <Border x:Name="SendImageEditor" Visibility="Collapsed" Background="{DynamicResource ControlFillColor}"
+                                        BorderBrush="{DynamicResource ButtonBorderColor}" BorderThickness="1" Padding="12">
+                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Image x:Name="SendImagePreview" Width="220" Height="185" Stretch="Uniform"/>
+                                        <TextBlock x:Name="SendImageFileName" HorizontalAlignment="Center" Margin="0,8,0,0" TextTrimming="CharacterEllipsis" MaxWidth="260"/>
+                                        <TextBlock Text="发送时将通过剪贴板粘贴图片并按 Enter" Opacity="0.6" FontSize="12" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
                             </Grid>
-                            <Button x:Name="BtnDeleteItem" Grid.Row="2" Style="{DynamicResource LinkButton}" Content="删除当前条目"
-                                    HorizontalAlignment="Left" Margin="0,10,0,0" Click="BtnDeleteItem_Click"/>
                         </Grid>
                     </Border>
 
@@ -190,7 +208,7 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition/>
                         </Grid.ColumnDefinitions>
-                        <Label Content="摸鱼快捷键" HorizontalAlignment="Left" Margin="10,75,0,0" VerticalAlignment="Top" Height="28" Width="80"/>
+                        <Label Content="摸鱼快捷键（老板键）" HorizontalAlignment="Left" Margin="10,75,0,0" VerticalAlignment="Top" Height="28" Width="150"/>
                         <TextBox x:Name="KeyTextbox2" InputMethod.IsInputMethodEnabled="False" HorizontalAlignment="Left" Height="32" Margin="10,105,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="173" PreviewTextInput="TextBox_PreviewTextInput" Text="Shift+Z" >
                             <TextBox.CommandBindings>
                                 <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"></CommandBinding>
@@ -202,6 +220,7 @@
                     <Label Content="注意：此功能仅在本程序运行时有效！" HorizontalAlignment="Left" Margin="222,327,0,0" VerticalAlignment="Top"/>
                     <Button Style="{DynamicResource DefaultButton}" Content="应用" HorizontalAlignment="Left" Height="36" Margin="491,323,0,0" VerticalAlignment="Top" Width="79" Click="Button_Click_4"/>
                     <Button x:Name="LoafHelpButton" Style="{DynamicResource LinkButton}" Content="了解此功能" Grid.Column="0" Margin="22,327,515,160" Click="LoafHelpButton_Click"/>
+                    <Label x:Name="NewMessage" Content="更多功能敬请期待" HorizontalAlignment="Left" Margin="10,225,0,0" VerticalAlignment="Top" Height="28" Width="121"/>
                 </Grid>
             </TabItem>
             <TabItem Header="选项">
@@ -212,51 +231,65 @@
                     </Grid.RowDefinitions>
                     <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Visible" HorizontalScrollBarVisibility="Disabled" Margin="0">
                         <Grid Width="594" HorizontalAlignment="Left">
+                            <Grid>
+                                <Label Content="行为"  FontSize="23"  FontWeight="Light" Margin="5,5,0,0" VerticalAlignment="Top"/>
+                                <CheckBox x:Name="DoAutoStartCheckbox" Margin="17,44,0,0" Content="开机自启动" HorizontalAlignment="Left" VerticalAlignment="Top" />
+                            </Grid>
+                            <Grid Margin="0,80,0,0">
+                                <Label Content="外观"  FontSize="23"  FontWeight="Light" Margin="5,5,0,0" VerticalAlignment="Top"/>
+                                <Label Content="主题" HorizontalAlignment="Left" Margin="10,43,0,0" VerticalAlignment="Top"/>
+                                <ComboBox Style="{DynamicResource comboboxStyle}" x:Name="Combobox1" HorizontalAlignment="Left" Margin="53,43,0,0" VerticalAlignment="Top" Width="120" IsTextSearchEnabled="False">
 
-                            <Label Content="外观"  FontSize="23"  FontWeight="Light" Margin="5,5,0,0" VerticalAlignment="Top"/>
-
-                            <Label Content="主题" HorizontalAlignment="Left" Margin="10,43,0,0" VerticalAlignment="Top"/>
-                            <ComboBox Style="{DynamicResource comboboxStyle}" x:Name="Combobox1" HorizontalAlignment="Left" Margin="53,43,0,0" VerticalAlignment="Top" Width="120" IsTextSearchEnabled="False">
-
-                                <ComboBoxItem Content="跟随系统"/>
-                                <ComboBoxItem Content="浅色"/>
-                                <ComboBoxItem Content="深色"/>
-                            </ComboBox>
-                            <CheckBox x:Name="IsMicaEnabledCheckbox" Margin="192,43,0,0" Content="启用云母效果（仅限Win11)" HorizontalAlignment="Left" VerticalAlignment="Top" />
-                            <Label Content="悬浮窗" HorizontalAlignment="Left" Margin="10,80,0,0" VerticalAlignment="Top"/>
-                            <ComboBox Style="{DynamicResource comboboxStyle}" x:Name="Combobox2" HorizontalAlignment="Left" Margin="67,78,0,0" VerticalAlignment="Top" Width="120" IsTextSearchEnabled="False">
-                                <ComboBoxItem Content="始终显示"/>
-                                <ComboBoxItem Content="始终隐藏"/>
-                                <ComboBoxItem Content="自动收缩"/>
-                            </ComboBox>
-                            <CheckBox x:Name="DoFloatingWindowTopmost" Margin="192,81,0,0" Content="悬浮窗置顶" HorizontalAlignment="Left" VerticalAlignment="Top" />
-                            <Label Content="快捷键"  FontSize="23"  FontWeight="Light" Margin="5,120,0,0" VerticalAlignment="Top"/>
-                            <Label Content="终止任务" HorizontalAlignment="Left" Margin="10,152,0,0" VerticalAlignment="Top"/>
-                            <TextBox x:Name="KeyTextbox3" Text="Ctrl+G" InputMethod.IsInputMethodEnabled="False" HorizontalAlignment="Left" Height="32" Margin="81,152,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="173" PreviewTextInput="TextBox_PreviewTextInput" >
-                                <TextBox.CommandBindings>
-                                    <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"></CommandBinding>
-                                </TextBox.CommandBindings>
-                            </TextBox>
-                            <Label Content="连点开关" HorizontalAlignment="Left" Margin="10,195,0,0" VerticalAlignment="Top"/>
-                            <TextBox x:Name="KeyTextbox4" InputMethod.IsInputMethodEnabled="False" HorizontalAlignment="Left" Height="32" Margin="81,195,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="173" PreviewTextInput="TextBox_PreviewTextInput" >
-                                <TextBox.CommandBindings>
-                                    <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"></CommandBinding>
-                                </TextBox.CommandBindings>
-                            </TextBox>
-                            <Label Content="连发开关" HorizontalAlignment="Left" Margin="10,235,0,0" VerticalAlignment="Top"/>
-                            <TextBox x:Name="KeyTextbox5" InputMethod.IsInputMethodEnabled="False" HorizontalAlignment="Left" Height="32" Margin="81,235,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="173" PreviewTextInput="TextBox_PreviewTextInput" >
-                                <TextBox.CommandBindings>
-                                    <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"></CommandBinding>
-                                </TextBox.CommandBindings>
-                            </TextBox>
-                            <Label Content="显示/隐藏主界面" HorizontalAlignment="Left" Margin="10,275,0,0" VerticalAlignment="Top"/>
-                            <TextBox x:Name="KeyTextbox6" InputMethod.IsInputMethodEnabled="False" HorizontalAlignment="Left" Height="32" Margin="130,275,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="173" PreviewTextInput="TextBox_PreviewTextInput" >
-                                <TextBox.CommandBindings>
-                                    <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"></CommandBinding>
-                                </TextBox.CommandBindings>
-                            </TextBox>
-                            <Label Content="注：所有快捷键有关的设置需重启程序后生效。" HorizontalAlignment="Left" Margin="10,320,0,0" VerticalAlignment="Top"/>
-
+                                    <ComboBoxItem Content="跟随系统"/>
+                                    <ComboBoxItem Content="浅色"/>
+                                    <ComboBoxItem Content="深色"/>
+                                </ComboBox>
+                                <CheckBox x:Name="IsMicaEnabledCheckbox" Margin="192,43,0,0" Content="启用云母效果（仅限Win11)" HorizontalAlignment="Left" VerticalAlignment="Top" />
+                                <Label Content="悬浮窗" HorizontalAlignment="Left" Margin="10,80,0,0" VerticalAlignment="Top"/>
+                                <ComboBox Style="{DynamicResource comboboxStyle}" x:Name="Combobox2" HorizontalAlignment="Left" Margin="67,78,0,0" VerticalAlignment="Top" Width="120" IsTextSearchEnabled="False">
+                                    <ComboBoxItem Content="始终显示"/>
+                                    <ComboBoxItem Content="始终隐藏"/>
+                                    <ComboBoxItem Content="自动收缩"/>
+                                </ComboBox>
+                                <CheckBox x:Name="DoFloatingWindowTopmost" Margin="192,81,0,0" Content="悬浮窗置顶" HorizontalAlignment="Left" VerticalAlignment="Top" />
+                                <Label Content="启动显示" HorizontalAlignment="Left" Margin="10,117,0,0" VerticalAlignment="Top"/>
+                                <ComboBox Style="{DynamicResource comboboxStyle}" x:Name="StartupTabComboBox" HorizontalAlignment="Left" Margin="81,116,0,0" VerticalAlignment="Top" Width="120" IsTextSearchEnabled="False">
+                                    <ComboBoxItem Content="欢迎"/>
+                                    <ComboBoxItem Content="连点"/>
+                                    <ComboBoxItem Content="连发"/>
+                                    <ComboBoxItem Content="摸鱼"/>
+                                    <ComboBoxItem Content="选项"/>
+                                    <ComboBoxItem Content="关于"/>
+                                </ComboBox>
+                            </Grid>
+                            <Grid Margin="0,116,0,0">
+                                <Label Content="快捷键"  FontSize="23"  FontWeight="Light" Margin="5,120,0,0" VerticalAlignment="Top"/>
+                                <Label Content="终止任务" HorizontalAlignment="Left" Margin="10,152,0,0" VerticalAlignment="Top"/>
+                                <TextBox x:Name="KeyTextbox3" Text="Ctrl+G" InputMethod.IsInputMethodEnabled="False" HorizontalAlignment="Left" Height="32" Margin="81,152,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="173" PreviewTextInput="TextBox_PreviewTextInput" >
+                                    <TextBox.CommandBindings>
+                                        <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"></CommandBinding>
+                                    </TextBox.CommandBindings>
+                                </TextBox>
+                                <Label Content="连点开关" HorizontalAlignment="Left" Margin="10,195,0,0" VerticalAlignment="Top"/>
+                                <TextBox x:Name="KeyTextbox4" InputMethod.IsInputMethodEnabled="False" HorizontalAlignment="Left" Height="32" Margin="81,195,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="173" PreviewTextInput="TextBox_PreviewTextInput" >
+                                    <TextBox.CommandBindings>
+                                        <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"></CommandBinding>
+                                    </TextBox.CommandBindings>
+                                </TextBox>
+                                <Label Content="连发开关" HorizontalAlignment="Left" Margin="10,235,0,0" VerticalAlignment="Top"/>
+                                <TextBox x:Name="KeyTextbox5" InputMethod.IsInputMethodEnabled="False" HorizontalAlignment="Left" Height="32" Margin="81,235,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="173" PreviewTextInput="TextBox_PreviewTextInput" >
+                                    <TextBox.CommandBindings>
+                                        <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"></CommandBinding>
+                                    </TextBox.CommandBindings>
+                                </TextBox>
+                                <Label Content="显示/隐藏主界面" HorizontalAlignment="Left" Margin="10,275,0,0" VerticalAlignment="Top"/>
+                                <TextBox x:Name="KeyTextbox6" InputMethod.IsInputMethodEnabled="False" HorizontalAlignment="Left" Height="32" Margin="130,275,0,0" TextWrapping="Wrap" VerticalAlignment="Top" Width="173" PreviewTextInput="TextBox_PreviewTextInput" >
+                                    <TextBox.CommandBindings>
+                                        <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"></CommandBinding>
+                                    </TextBox.CommandBindings>
+                                </TextBox>
+                                <Label Content="注：所有快捷键有关的设置需重启程序后生效。" HorizontalAlignment="Left" Margin="10,320,0,0" VerticalAlignment="Top"/>
+                            </Grid>
                         </Grid>
                     </ScrollViewer>
                     <Grid Grid.Row="1" Height="48" Width="594">
@@ -265,20 +298,54 @@
                 </Grid>
             </TabItem>
             <TabItem Header="关于">
-                <Grid Background="{DynamicResource backgroundColor1}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition/>
-                    </Grid.ColumnDefinitions>
-                    <Label FontSize="23" FontWeight="Light"/>
-                    <Image Margin="18,48,452,198" Source="{DynamicResource aboutIcon}"/>
-                    <Label x:Name="ProductName" Content="键鼠管家" FontSize="23" FontWeight="Light" Margin="167,64,231,258"/>
-                    <Label x:Name="VerLabel" Content="版本号：" FontSize="18" FontWeight="Light" Margin="167,132,297,208" Width="150" Height="50"/>
-                    <Label x:Name="GitID" Content="最近的提交id：" FontSize="14" FontWeight="Light" Margin="167,182,297,157"/>
+                <Grid Background="{DynamicResource backgroundColor1}" Margin="24,20,24,18">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="96"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border Width="80" Height="80" CornerRadius="16" Background="{DynamicResource ControlFillColor}"
+                                    HorizontalAlignment="Left" VerticalAlignment="Top">
+                            <Image Width="64" Height="64" Source="{DynamicResource aboutIcon}"/>
+                        </Border>
+
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,0,0">
+                            <TextBlock x:Name="ProductName" Text="键鼠管家" FontSize="25" FontWeight="Light"/>
+                            <TextBlock Text="一个好用的键鼠工具箱" FontSize="13" Opacity="0.62" Margin="0,4,0,0"/>
+                            <TextBlock x:Name="VerLabel" Text="版本号：" FontSize="14" Margin="0,13,0,0"/>
+                            <TextBlock x:Name="GitID" Text="Git ID：" FontSize="12" Opacity="0.62" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                        <Border Grid.Row="1" Grid.ColumnSpan="2" Height="1" Background="{DynamicResource ButtonBorderColor}"
+                                    Opacity="0.22" Margin="0,20,0,14"/>
+                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,35,0,0" TextWrapping="Wrap" LineHeight="20" Opacity="0.72"
+                                       Text="提供连点、列表连发、全局热键和悬浮窗等功能。支持 Windows 10 1809 及更高版本。"/>
+                    </Grid>
+
+                    <Grid Grid.Row="1" Margin="4,12,4,0">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button Style="{DynamicResource LinkButton}" Content="更新日志" Margin="0,0,18,0" Click="UpdDatabtn_Click" Height="23"/>
+                            <ContentControl x:Name="UpdateProgressRing" Width="20" Height="20" Margin="0,0,12,0"
+                                            Visibility="Collapsed" ToolTip="正在检查更新"
+                                            Style="{DynamicResource ProgressRingStyle}"/>
+                            <Button x:Name="UpdateButton" Style="{DynamicResource DefaultButton}" Content="检查更新" Height="36" Width="96" Click="UpdButton_Click"/>
+                        </StackPanel>
+                    </Grid>
                 </Grid>
             </TabItem>
 
 
         </TabControl>
-        <ToggleButton x:Name="pinButton" Style="{DynamicResource topmostButtonStyle}" FontFamily="iconFont" Grid.Column="1" Content="{DynamicResource Icon.Pin}" HorizontalAlignment="Left" Height="36" Margin="212,-4,0,0" VerticalAlignment="Top" Width="43" Click="ToggleButton_Click"/>
+        <ToggleButton x:Name="pinButton" Style="{DynamicResource topmostButtonStyle}" FontFamily="{DynamicResource iconFont}" FontSize="18" Grid.Column="1" Content="{DynamicResource Icon.Pin}" HorizontalAlignment="Left" Height="36" Margin="212,-4,0,0" VerticalAlignment="Top" Width="43" Click="ToggleButton_Click"/>
     </Grid>
 </Window>

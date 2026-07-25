@@ -161,6 +161,19 @@ Module UserInputHandler
         SendInputEvents(inputList)
     End Sub
 
+    Public Sub SendPasteShortcut()
+        Dim inputList As New List(Of Input)
+        Const VK_CONTROL As UShort = &H11
+        Const VK_V As UShort = &H56
+        Const INPUT_KEYBOARD As UInteger = 1
+        Const KEYEVENTF_KEYUP As UInteger = &H2
+
+        inputList.Add(New Input With {.Type = INPUT_KEYBOARD, .Data = New InputUnion With {.Keyboard = New KeyboardInput With {.VirtualKey = VK_CONTROL}}})
+        AddVirtualKeyInputs(inputList, VK_V)
+        inputList.Add(New Input With {.Type = INPUT_KEYBOARD, .Data = New InputUnion With {.Keyboard = New KeyboardInput With {.VirtualKey = VK_CONTROL, .Flags = KEYEVENTF_KEYUP}}})
+        SendInputEvents(inputList)
+    End Sub
+
     Private Sub SendInputEvents(inputList As List(Of Input))
         If inputList.Count = 0 Then Return
         For Each inputEvent As Input In inputList

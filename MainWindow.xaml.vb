@@ -1,24 +1,29 @@
 ﻿'主窗体代码
+Imports System.IO
+Imports System.IO.Compression
+Imports System.Linq
+Imports System.Net.Http
 Imports System.Runtime.InteropServices
+Imports System.Text
 Imports System.Text.RegularExpressions
 Imports System.Threading
 Imports System.Timers
 Imports System.Windows.Interop
+Imports System.Windows.Media
+Imports System.Windows.Media.Animation
+Imports System.Windows.Threading
 Imports Microsoft.Win32
 Imports WindowSelector
 Imports Timer = System.Timers.Timer
-Imports System.Linq
-Imports System.IO
-Imports System.Text
-Imports System.Windows.Threading
 
 
 
 Public Class MainWindow1
 
+#Region "DllImports&Veriables"
 
     'git id
-    Public Const id As String = "未知提交"
+    Public Const id As String = "e31a3fe"
     Private floatingWindow As New FloatingWindow
     Private Shared _instance As MainWindow1
     '移除最大化按钮
@@ -50,6 +55,8 @@ Public Class MainWindow1
 
     Dim savedkeys As New List(Of Key)
 
+#End Region
+
 #Region "InitializeProgram"
 
     Private Sub Window_Loaded(sender As Object, e As RoutedEventArgs)
@@ -61,7 +68,7 @@ Public Class MainWindow1
         End If
         '判断是否为测试版
         If My.Application.Info.Version.Revision <> 0 Then
-            ProductName.Content = "键鼠管家测试版"
+            ProductName.Text = "键鼠管家测试版"
             Title = "键鼠管家测试版"
             WelcomeText.Content = "欢迎参与键鼠管家测试版的测试！"
             TestTip.Visibility = Visibility.Visible
@@ -77,13 +84,12 @@ Public Class MainWindow1
             ShowExpdlg("错误6：程序在初始化时读取设置出现问题，请尝试删除所有位于HKEY_CURRENT_USER\SOFTWARE\LCS\keyboardmgr的设置，如仍不能解决问题，请联系LCS。", ex.Message & vbLf & ex.StackTrace)
         End Try
         ThemeModule.ApplyWindowBackdrop(Me, RootGrid, ThemeModule.isMicaEnabled AndAlso ThemeModule.IsWindows11_22H2OrLater())
-
-        VerLabel.Content = "版本号：" & My.Application.Info.Version.Major & "." & My.Application.Info.Version.Minor & "." & My.Application.Info.Version.Build & "." & My.Application.Info.Version.Revision
-        GitID.Content = "Git ID：" & id
-        '首次显示用于创建 HWND、消息钩子和托盘图标，再应用实际显示模式。
+        VerLabel.Text = "版本号：" & My.Application.Info.Version.Major & "." & My.Application.Info.Version.Minor & "." & My.Application.Info.Version.Build & "." & My.Application.Info.Version.Revision
+        GitID.Text = "Git ID：" & id
+        '首次显示用于创建 HWND、消息钩子和托盘图标，再应用实际显示模式
         floatingWindow.Show()
         floatingWindow.ApplyDisplayMode(FloatingWindowState)
-        '在悬浮窗 HWND 和消息钩子创建后注册热键。
+        '在悬浮窗 HWND 和消息钩子创建后注册热键
         RegisterAllHotkeys()
         Pinicon_Set()
         '移除最大化按钮
@@ -93,11 +99,15 @@ Public Class MainWindow1
     End Sub
 
     Public Sub HandleExternalRequest(filePath As String)
+        ShowInTaskbar = True
         Show()
         WindowState = WindowState.Normal
         Activate()
         SetForegroundWindow(New WindowInteropHelper(Me).Handle)
-        If String.IsNullOrEmpty(filePath) Then Return
+        If String.IsNullOrEmpty(filePath) Then
+            ApplyStartupTabSelection()
+            Return
+        End If
         TabControl1.SelectedIndex = 2
         OpenRapidFirePreset(filePath, False)
     End Sub
@@ -106,6 +116,7 @@ Public Class MainWindow1
         WriteSetting("isSettingsReady", 1)
         WriteSetting("DoAutoSwitchTheme", 1)
         WriteSetting("IsDarkMode", 0)
+        WriteSetting("DoAutoStart", 0)
         WriteSetting("FloatingWinShowState", 1)
         WriteSetting("DoRandomOffsetOfClickSpeed", 0)
         WriteSetting("DoCustomizeCursorPos", 0)
@@ -113,6 +124,7 @@ Public Class MainWindow1
         WriteSetting("ClickMode", "LeftClick")
         WriteSetting("ClickKeys", "")
         WriteSetting("StopActHotkeys", "Ctrl+G")
+        WriteSetting("StartupTabIndex", 0)
     End Sub
 
     Private Sub InitializeSettings()
@@ -123,6 +135,24 @@ Public Class MainWindow1
         InitializeClickSettings()
         InitializeHotkeySettings()
         UpdateItemDisplay()
+        ApplyStartupTabSelection()
+        If ReadSetting("DoAutoStart", 0) = 1 Then
+            DoAutoStartCheckbox.IsChecked = True
+            Try
+                UpdateAutoStartRegistration(True)
+            Catch
+                '旧版自启项迁移失败不应阻止程序启动，用户应用设置时会看到错误。
+            End Try
+        Else
+            DoAutoStartCheckbox.IsChecked = False
+        End If
+    End Sub
+
+    Private Sub ApplyStartupTabSelection()
+        Dim startupTabIndex As Integer
+        If Not Integer.TryParse(ReadSetting("StartupTabIndex", 0).ToString(), startupTabIndex) OrElse startupTabIndex < 0 OrElse startupTabIndex >= TabControl1.Items.Count Then startupTabIndex = 0
+        StartupTabComboBox.SelectedIndex = startupTabIndex
+        TabControl1.SelectedIndex = startupTabIndex
     End Sub
 
     Private Sub InitializeThemeSettings()
@@ -313,12 +343,33 @@ Public Class MainWindow1
     End Sub
 
     Public Sub Pinicon_Set()
-        '在代码里设置pinButton图标，防止图标不显示
-        Dim resourceDictionary As New ResourceDictionary With {
-           .Source = New Uri("pack://application:,,,/keyboardmgr2;Component/resource/" & If(isDarkTheme, "DarkTheme.xaml", "LightTheme.xaml"), UriKind.Absolute)
-       }
-        Dim pinIcon As Canvas = resourceDictionary("Icon.Pin")
-        pinButton.Content = pinIcon
+        pinButton.SetResourceReference(ContentControl.ContentProperty, "Icon.Pin")
+    End Sub
+
+    Private Sub TabControl1_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+        If e.Source IsNot TabControl1 OrElse Not IsLoaded OrElse Not SystemParameters.ClientAreaAnimation Then Return
+
+        Dim selectedTab = TryCast(TabControl1.SelectedItem, TabItem)
+        Dim page = If(selectedTab Is Nothing, Nothing, TryCast(selectedTab.Content, FrameworkElement))
+        Dim previousTab = If(e.RemovedItems.Count > 0, TryCast(e.RemovedItems(0), TabItem), Nothing)
+        If page Is Nothing OrElse previousTab Is Nothing Then Return
+
+        Dim duration = New Duration(TimeSpan.FromMilliseconds(280))
+        Dim easing = New CubicEase() With {.EasingMode = EasingMode.EaseOut}
+        Dim previousIndex = TabControl1.Items.IndexOf(previousTab)
+        Dim offset = If(TabControl1.SelectedIndex > previousIndex, 40.0, -40.0)
+        Dim translate = TryCast(page.RenderTransform, TranslateTransform)
+        If translate Is Nothing Then
+            translate = New TranslateTransform()
+            page.RenderTransform = translate
+        End If
+
+        page.Opacity = 1
+        translate.X = 0
+        page.BeginAnimation(OpacityProperty, New DoubleAnimation(0, 1, duration) With {
+                            .EasingFunction = easing, .FillBehavior = FillBehavior.Stop})
+        translate.BeginAnimation(TranslateTransform.XProperty, New DoubleAnimation(offset, 0, duration) With {
+                                 .EasingFunction = easing, .FillBehavior = FillBehavior.Stop})
     End Sub
 
     Public Sub New()
@@ -326,6 +377,7 @@ Public Class MainWindow1
         AddHandler timerSend.Tick, AddressOf TimerSend_Tick
         AddHandler sendStartTimer.Tick, AddressOf SendStartTimer_Tick
         AddHandler sendCompletionTimer.Tick, AddressOf SendCompletionTimer_Tick
+        AddHandler imagePasteTimer.Tick, AddressOf ImagePasteTimer_Tick
         AddHandler SystemEvents.UserPreferenceChanged, AddressOf OnUserPreferenceChanged
         InitializeTextBoxKeyHandler(KeyTextbox1)
         InitializeTextBoxKeyHandler(KeyTextbox2)
@@ -344,56 +396,6 @@ Public Class MainWindow1
     End Property
 
 #End Region
-
-    Private Sub OnUserPreferenceChanged(sender As Object, e As UserPreferenceChangedEventArgs)
-        If Not Dispatcher.CheckAccess() Then
-            Dispatcher.BeginInvoke(New Action(Of Object, UserPreferenceChangedEventArgs)(AddressOf OnUserPreferenceChanged), sender, e)
-            Return
-        End If
-        '检查用户是否在程序打开时切换了系统深浅色模式
-        If e.Category = UserPreferenceCategory.General Then
-            '检测是否设置为自动跟随系统主题
-            If ReadSetting("DoAutoSwitchTheme", 0) = 1 Then
-                '判断当前是否启用深色模式
-                Dim isDarkMode As Boolean = IsDarkModeEnabled()
-                '切换主题到深色或浅色模式
-                SwitchTheme(isDarkMode)
-                WriteSetting("IsDarkMode", isDarkMode)
-            End If
-        End If
-    End Sub
-    '欢迎界面的底部链接
-    Private Sub Button_Click_1(sender As Object, e As RoutedEventArgs)
-        Process.Start("https://sysbbs.cn/")
-    End Sub
-
-    Private Sub Button_Click_2(sender As Object, e As RoutedEventArgs)
-        Process.Start("https://qm.qq.com/q/SIZ1MaTKoe")
-    End Sub
-
-    Private Sub MainWindow1_Closing(sender As Object, e As ComponentModel.CancelEventArgs) Handles MyBase.Closing
-        Visibility = Visibility.Hidden
-        e.Cancel = True
-    End Sub
-
-    Private Sub ToggleButton_Click(sender As Object, e As RoutedEventArgs)
-        Dim resourceDictionary As New ResourceDictionary With {
-            .Source = New Uri("pack://application:,,,/keyboardmgr2;Component/resource/" & If(isDarkTheme, "DarkTheme.xaml", "LightTheme.xaml"), UriKind.Absolute)
-        }
-        If pinButton.IsChecked = True Then
-            Topmost = True
-            Dim unpinIcon As Canvas = resourceDictionary("Icon.Unpin")
-            pinButton.Content = unpinIcon
-            pinButton.Foreground = New SolidColorBrush(Colors.White)
-        Else
-            Topmost = False
-            Dim pinIcon As Canvas = resourceDictionary("Icon.Pin")
-            pinButton.Content = pinIcon
-            pinButton.Foreground = New SolidColorBrush(Colors.Black)
-        End If
-    End Sub
-
-
 
 #Region "Settings"
     '保存设置
@@ -467,6 +469,11 @@ Public Class MainWindow1
         If KeyTextbox6.Text <> "" Then
             WriteSetting("ToggleMainWindowHotkeys", KeyTextbox6.Text)
         End If
+        If StartupTabComboBox.SelectedIndex < 0 OrElse StartupTabComboBox.SelectedIndex >= TabControl1.Items.Count Then
+            ShowMyMessage("无法保存设置：请选择程序启动时显示的选项卡。")
+            Return
+        End If
+        WriteSetting("StartupTabIndex", StartupTabComboBox.SelectedIndex)
         If IsMicaEnabledCheckbox.IsChecked = True Then
             WriteSetting("IsMicaEnabled", 1)
             ThemeModule.isMicaEnabled = True
@@ -474,7 +481,30 @@ Public Class MainWindow1
             WriteSetting("IsMicaEnabled", 0)
             ThemeModule.isMicaEnabled = False
         End If
+        '检测开机自启
+        Try
+            If DoAutoStartCheckbox.IsChecked = True Then
+                WriteSetting("DoAutoStart", 1)
+                UpdateAutoStartRegistration(True)
+            Else
+                WriteSetting("DoAutoStart", 0)
+                UpdateAutoStartRegistration(False)
+            End If
+        Catch ex As Exception
+            ShowMyMessage("设置开机自启出错，错误内容：" & ex.Message)
+        End Try
         ThemeModule.UpdateWindowBackdrops()
+    End Sub
+
+    Private Shared Sub UpdateAutoStartRegistration(enabled As Boolean)
+        Dim appPath As String = System.Reflection.Assembly.GetExecutingAssembly().Location
+        Using runKey As RegistryKey = Registry.CurrentUser.CreateSubKey("SOFTWARE\Microsoft\Windows\CurrentVersion\Run")
+            If enabled Then
+                runKey.SetValue("keyboardmgr2", Chr(34) & appPath & Chr(34) & " --autostart")
+            ElseIf runKey.GetValue("keyboardmgr2") IsNot Nothing Then
+                runKey.DeleteValue("keyboardmgr2")
+            End If
+        End Using
     End Sub
     '检测热键冲突（内部：两个热键是否相同）
     Private Function CheckHotkeyConflict(key1 As String, key2 As String) As Boolean
@@ -505,26 +535,6 @@ Public Class MainWindow1
     End Sub
 
 #End Region
-
-
-
-    Public Sub ShowWindow()
-        Show()
-    End Sub
-
-    Public Sub ToggleMainWindowVisibility()
-        If IsVisible AndAlso WindowState <> WindowState.Minimized Then
-            Hide()
-            Return
-        End If
-
-        Show()
-        WindowState = WindowState.Normal
-        Activate()
-        SetForegroundWindow(New WindowInteropHelper(Me).Handle)
-    End Sub
-
-
 
 #Region "ClickAndSend"
     '连点
@@ -812,7 +822,6 @@ Public Class MainWindow1
 
 #End Region
 
-
 #Region "Loaf"
     '摸鱼
     Dim isLoafEnabled As Boolean = False
@@ -921,8 +930,8 @@ Public Class MainWindow1
 
 #End Region
 
-#Region "SendKeys" '连发功能
-    Dim sendPhrases As New List(Of String)
+#Region "SendKeys" '连点与连发功能
+    Dim sendPhrases As New List(Of RapidFireItem)
     Dim currentSendIndex As Integer = -1
     Dim sendLoop As Boolean = False
     Private ReadOnly timerSend As New DispatcherTimer(DispatcherPriority.Normal)
@@ -930,7 +939,7 @@ Public Class MainWindow1
     Dim isClicking As Boolean = False
     Private isUpdatingSendEditor As Boolean = False
     Private sendItemPreviews As New List(Of String)
-    Private activeSendPhrases As New List(Of String)
+    Private activeSendPhrases As New List(Of RapidFireItem)
     Private sendCursor As Integer = 0
     Private sendTargetWindow As IntPtr = IntPtr.Zero
     Private ReadOnly sendStartTimer As New DispatcherTimer(DispatcherPriority.Normal)
@@ -938,34 +947,64 @@ Public Class MainWindow1
     Private sendTargetRetryCount As Integer = 0
     Private sendIntervalMilliseconds As Integer = 100
     Private ReadOnly sendIntervalWatch As New Diagnostics.Stopwatch()
+    Private ReadOnly imagePasteTimer As New DispatcherTimer(DispatcherPriority.Normal)
+    Private imagePastePending As Boolean = False
+    Private imageClipboardReady As Boolean = False
+    Private imagePasteReadyForEnter As Boolean = False
+    Private clipboardRetryCount As Integer = 0
+    Private imageFocusRetryCount As Integer = 0
+    Private activeImageClipboardData As DataObject
+    Private ReadOnly imageSendWatch As New Diagnostics.Stopwatch()
+    Private Const MaximumClipboardRetryCount As Integer = 20
+    Private Const MaximumImageFocusRetryCount As Integer = 10
+    Private Const MaximumImageSendMilliseconds As Integer = 5000
 
     Private Sub UpdateItemDisplay()
         isUpdatingSendEditor = True
         SendItemList.ItemsSource = Nothing
-        sendItemPreviews = sendPhrases.Select(Function(text, index) $"{index + 1}. {GetSendItemPreview(text)}").ToList()
+        sendItemPreviews = sendPhrases.Select(Function(item, index) $"{index + 1}. {GetSendItemPreview(item)}").ToList()
         SendItemList.ItemsSource = sendItemPreviews
-        TxtItemCounter.Text = $"{sendPhrases.Count} 个条目"
+        TxtItemCounter.Text = $"{sendPhrases.Count} 项"
 
         If sendPhrases.Count = 0 Then
             currentSendIndex = -1
             RichTextBox1.Document.Blocks.Clear()
             BtnDeleteItem.IsEnabled = False
+            BtnMoveItemUp.IsEnabled = False
+            BtnMoveItemDown.IsEnabled = False
             SendEditorWatermark.Visibility = Visibility.Visible
+            SendImageEditor.Visibility = Visibility.Collapsed
+            RichTextBox1.Visibility = Visibility.Visible
             isUpdatingSendEditor = False
             Return
         End If
         If currentSendIndex < 0 Then currentSendIndex = 0
         If currentSendIndex >= sendPhrases.Count Then currentSendIndex = sendPhrases.Count - 1
         SendItemList.SelectedIndex = currentSendIndex
+        Dim currentItem As RapidFireItem = sendPhrases(currentSendIndex)
         RichTextBox1.Document.Blocks.Clear()
-        RichTextBox1.Document.Blocks.Add(New Paragraph(New Run(sendPhrases(currentSendIndex))))
+        If currentItem.Kind = RapidFireItemKind.Image Then
+            RichTextBox1.Visibility = Visibility.Collapsed
+            SendEditorWatermark.Visibility = Visibility.Collapsed
+            SendImageEditor.Visibility = Visibility.Visible
+            SendImagePreview.Source = LoadBitmap(currentItem.ImageBytes)
+            SendImageFileName.Text = If(currentItem.FileName, "图片")
+        Else
+            RichTextBox1.Visibility = Visibility.Visible
+            SendImageEditor.Visibility = Visibility.Collapsed
+            SendImagePreview.Source = Nothing
+            RichTextBox1.Document.Blocks.Add(New Paragraph(New Run(If(currentItem.Text, String.Empty))))
+            SendEditorWatermark.Visibility = If(String.IsNullOrEmpty(currentItem.Text), Visibility.Visible, Visibility.Collapsed)
+        End If
         BtnDeleteItem.IsEnabled = True
-        SendEditorWatermark.Visibility = If(String.IsNullOrEmpty(sendPhrases(currentSendIndex)), Visibility.Visible, Visibility.Collapsed)
+        BtnMoveItemUp.IsEnabled = currentSendIndex > 0
+        BtnMoveItemDown.IsEnabled = currentSendIndex < sendPhrases.Count - 1
         isUpdatingSendEditor = False
     End Sub
 
-    Private Function GetSendItemPreview(text As String) As String
-        Dim preview As String = If(text, String.Empty).Replace(vbCr, " ").Replace(vbLf, " ").Trim()
+    Private Function GetSendItemPreview(item As RapidFireItem) As String
+        If item.Kind = RapidFireItemKind.Image Then Return "[图片] " & If(item.FileName, "未命名图片")
+        Dim preview As String = If(item.Text, String.Empty).Replace(vbCr, " ").Replace(vbLf, " ").Trim()
         If preview.Length = 0 Then Return "未命名条目"
         If preview.Length > 18 Then Return preview.Substring(0, 18) & "…"
         Return preview
@@ -990,11 +1029,11 @@ Public Class MainWindow1
     End Sub
 
     Private Sub SaveCurrentItem()
-        If currentSendIndex >= 0 AndAlso currentSendIndex < sendPhrases.Count Then
+        If currentSendIndex >= 0 AndAlso currentSendIndex < sendPhrases.Count AndAlso sendPhrases(currentSendIndex).Kind = RapidFireItemKind.Text Then
             Dim textRange As New TextRange(RichTextBox1.Document.ContentStart, RichTextBox1.Document.ContentEnd)
             Dim text As String = textRange.Text
             If text.EndsWith(vbCrLf, StringComparison.Ordinal) Then text = text.Substring(0, text.Length - vbCrLf.Length)
-            sendPhrases(currentSendIndex) = text
+            sendPhrases(currentSendIndex).Text = text
         End If
     End Sub
 
@@ -1018,10 +1057,38 @@ Public Class MainWindow1
 
     Private Sub BtnAddItem_Click(sender As Object, e As RoutedEventArgs)
         SaveCurrentItem()
-        sendPhrases.Add(String.Empty)
+        sendPhrases.Add(RapidFireItem.CreateText(String.Empty))
         currentSendIndex = sendPhrases.Count - 1
         UpdateItemDisplay()
         RichTextBox1.Focus()
+    End Sub
+
+    Private Sub BtnAddImage_Click(sender As Object, e As RoutedEventArgs)
+        SaveCurrentItem()
+        If sendPhrases.Count >= RapidFirePresetCodec.MaximumItemCount Then
+            ShowMyMessage("连发预设最多支持10000个条目。")
+            Return
+        End If
+        Dim dialog As New OpenFileDialog With {
+            .Title = "插入图片",
+            .Filter = "图片文件 (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff)|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff|所有文件 (*.*)|*.*",
+            .CheckFileExists = True,
+            .Multiselect = False
+        }
+        If dialog.ShowDialog(Me) <> True Then Return
+        Try
+            If New FileInfo(dialog.FileName).Length >= RapidFirePresetCodec.MaximumFileSize Then Throw New InvalidDataException("图片文件必须小于 16 MiB。")
+            Dim imageBytes As Byte() = File.ReadAllBytes(dialog.FileName)
+            If imageBytes.Length = 0 Then Throw New InvalidDataException("图片文件为空。")
+            LoadBitmap(imageBytes)
+            Dim item As New RapidFireItem With {.Kind = RapidFireItemKind.Image, .FileName = Path.GetFileName(dialog.FileName), .ImageBytes = imageBytes}
+            Dim insertIndex As Integer = If(currentSendIndex >= 0, currentSendIndex + 1, sendPhrases.Count)
+            sendPhrases.Insert(insertIndex, item)
+            currentSendIndex = insertIndex
+            UpdateItemDisplay()
+        Catch ex As Exception
+            ShowMyMessage("无法插入图片：" & ex.Message)
+        End Try
     End Sub
 
     Private Sub BtnMoveItemUp_Click(sender As Object, e As RoutedEventArgs)
@@ -1037,7 +1104,7 @@ Public Class MainWindow1
         If currentSendIndex < 0 Then Return
         Dim targetIndex As Integer = currentSendIndex + offset
         If targetIndex < 0 OrElse targetIndex >= sendPhrases.Count Then Return
-        Dim item As String = sendPhrases(currentSendIndex)
+        Dim item As RapidFireItem = sendPhrases(currentSendIndex)
         sendPhrases.RemoveAt(currentSendIndex)
         sendPhrases.Insert(targetIndex, item)
         currentSendIndex = targetIndex
@@ -1064,7 +1131,7 @@ Public Class MainWindow1
         End If
         If isClicking Then StopClick()
         SaveCurrentItem()
-        If sendPhrases.Count = 0 OrElse Not sendPhrases.Any(Function(item) Not String.IsNullOrWhiteSpace(item)) Then
+        If sendPhrases.Count = 0 OrElse Not sendPhrases.Any(AddressOf IsSendableItem) Then
             ShowMyMessage("没有连发内容可发送")
             Return
         End If
@@ -1080,7 +1147,7 @@ Public Class MainWindow1
         End If
         sendLoop = ChkSendLoop.IsChecked.GetValueOrDefault(False)
         '启动发送
-        activeSendPhrases = sendPhrases.Where(Function(item) Not String.IsNullOrWhiteSpace(item)).ToList()
+        activeSendPhrases = sendPhrases.Where(AddressOf IsSendableItem).Select(AddressOf CloneSendItem).ToList()
         sendCursor = 0
         isSending = True
         BtnSendStart.Content = "停止连发"
@@ -1119,7 +1186,7 @@ Public Class MainWindow1
 
         sendTargetWindow = candidateWindow
         SendNextPhrase()
-        If isSending Then timerSend.Start()
+        If isSending AndAlso Not imagePastePending Then timerSend.Start()
     End Sub
 
     Private Sub TimerSend_Tick(sender As Object, e As EventArgs)
@@ -1132,7 +1199,7 @@ Public Class MainWindow1
             Return
         End If
         SendNextPhrase()
-        If isSending Then
+        If isSending AndAlso Not imagePastePending Then
             timerSend.Interval = TimeSpan.FromMilliseconds(sendIntervalMilliseconds)
             timerSend.Start()
         End If
@@ -1153,26 +1220,136 @@ Public Class MainWindow1
             Return
         End If
         SetForegroundWindow(sendTargetWindow)
-        Dim textToSend As String = activeSendPhrases(sendCursor)
-        If Not String.IsNullOrWhiteSpace(textToSend) Then
-            Try
-                UserInputHandler.SendUnicodeText(textToSend)
+        Dim itemToSend As RapidFireItem = activeSendPhrases(sendCursor)
+        Try
+            If itemToSend.Kind = RapidFireItemKind.Image Then
+                imagePastePending = True
+                imageClipboardReady = False
+                imagePasteReadyForEnter = False
+                clipboardRetryCount = 0
+                imageFocusRetryCount = 0
+                imageSendWatch.Restart()
+                TryStartImagePaste(itemToSend)
+                Return
+            ElseIf Not String.IsNullOrWhiteSpace(itemToSend.Text) Then
+                UserInputHandler.SendUnicodeText(itemToSend.Text)
                 UserInputHandler.SendEnterKey()
                 sendIntervalWatch.Restart()
+            End If
+        Catch ex As Exception
+            StopSend()
+            ShowMyMessage("无法发送连发条目：" & ex.Message)
+            Return
+        End Try
+        sendCursor += 1
+        If Not sendLoop AndAlso sendCursor >= activeSendPhrases.Count Then CompleteSend()
+    End Sub
+
+    Private Sub TryStartImagePaste(item As RapidFireItem)
+        Try
+            SetImageClipboardData(item.ImageBytes)
+            imageClipboardReady = True
+            imagePasteTimer.Stop()
+            imagePasteTimer.Interval = TimeSpan.FromMilliseconds(100)
+            imagePasteTimer.Start()
+        Catch ex As ExternalException
+            clipboardRetryCount += 1
+            If clipboardRetryCount >= MaximumClipboardRetryCount Then
+                StopSend()
+                ShowMyMessage("无法使用剪贴板，其他程序可能持续占用剪贴板。请稍后重试。")
+                Return
+            End If
+            imagePasteTimer.Stop()
+            imagePasteTimer.Interval = TimeSpan.FromMilliseconds(50)
+            imagePasteTimer.Start()
+        Catch ex As Exception
+            StopSend()
+            ShowMyMessage("无法发送图片：" & ex.Message)
+        End Try
+    End Sub
+
+    Private Sub ImagePasteTimer_Tick(sender As Object, e As EventArgs)
+        imagePasteTimer.Stop()
+        If Not isSending OrElse Not imagePastePending Then Return
+        If imageSendWatch.ElapsedMilliseconds >= MaximumImageSendMilliseconds Then
+            StopSend()
+            ShowMyMessage("图片发送等待超时，任务已停止。请确认目标输入框支持使用 Ctrl+V 粘贴图片。")
+            Return
+        End If
+        If Not imagePasteReadyForEnter Then
+            If sendCursor >= activeSendPhrases.Count Then
+                StopSend()
+                Return
+            End If
+            If Not imageClipboardReady Then
+                TryStartImagePaste(activeSendPhrases(sendCursor))
+                Return
+            End If
+            If sendTargetWindow = IntPtr.Zero OrElse Not IsWindow(sendTargetWindow) Then
+                StopSend()
+                ShowMyMessage("连发目标窗口已关闭，任务已停止。")
+                Return
+            End If
+            If GetForegroundWindow() <> sendTargetWindow Then
+                SetForegroundWindow(sendTargetWindow)
+                imageFocusRetryCount += 1
+                If imageFocusRetryCount >= MaximumImageFocusRetryCount Then
+                    StopSend()
+                    ShowMyMessage("无法将焦点切换到连发目标窗口，图片发送已停止。")
+                    Return
+                End If
+                imagePasteTimer.Interval = TimeSpan.FromMilliseconds(50)
+                imagePasteTimer.Start()
+                Return
+            End If
+            Try
+                UserInputHandler.SendPasteShortcut()
             Catch ex As ComponentModel.Win32Exception
                 StopSend()
                 ShowMyMessage(ex.Message)
                 Return
             End Try
+            imagePasteReadyForEnter = True
+            imagePasteTimer.Interval = TimeSpan.FromMilliseconds(500)
+            imagePasteTimer.Start()
+            Return
         End If
+        Try
+            UserInputHandler.SendEnterKey()
+        Catch ex As ComponentModel.Win32Exception
+            StopSend()
+            ShowMyMessage(ex.Message)
+            Return
+        End Try
+        imagePastePending = False
+        imageClipboardReady = False
+        imagePasteReadyForEnter = False
+        clipboardRetryCount = 0
+        imageFocusRetryCount = 0
+        activeImageClipboardData = Nothing
+        imageSendWatch.Reset()
+        sendIntervalWatch.Restart()
         sendCursor += 1
-        If Not sendLoop AndAlso sendCursor >= activeSendPhrases.Count Then CompleteSend()
+        If Not sendLoop AndAlso sendCursor >= activeSendPhrases.Count Then
+            CompleteSend()
+        ElseIf isSending Then
+            timerSend.Interval = TimeSpan.FromMilliseconds(sendIntervalMilliseconds)
+            timerSend.Start()
+        End If
     End Sub
 
     Private Sub CompleteSend()
         StopSend()
         '让最后一次 Enter 先由目标程序处理，再恢复并激活主窗口。
         sendCompletionTimer.Stop()
+        imagePasteTimer.Stop()
+        imagePastePending = False
+        imageClipboardReady = False
+        imagePasteReadyForEnter = False
+        clipboardRetryCount = 0
+        imageFocusRetryCount = 0
+        activeImageClipboardData = Nothing
+        imageSendWatch.Reset()
         sendCompletionTimer.Interval = TimeSpan.FromMilliseconds(150)
         sendCompletionTimer.Start()
     End Sub
@@ -1189,6 +1366,14 @@ Public Class MainWindow1
         timerSend.Stop()
         sendStartTimer.Stop()
         sendCompletionTimer.Stop()
+        imagePasteTimer.Stop()
+        imagePastePending = False
+        imageClipboardReady = False
+        imagePasteReadyForEnter = False
+        clipboardRetryCount = 0
+        imageFocusRetryCount = 0
+        activeImageClipboardData = Nothing
+        imageSendWatch.Reset()
         isSending = False
         activeSendPhrases.Clear()
         sendCursor = 0
@@ -1201,7 +1386,7 @@ Public Class MainWindow1
 
     Private Sub BtnSendSave_Click(sender As Object, e As RoutedEventArgs)
         SaveCurrentItem()
-        If sendPhrases.Count = 0 OrElse Not sendPhrases.Any(Function(item) Not String.IsNullOrWhiteSpace(item)) Then
+        If sendPhrases.Count = 0 OrElse Not sendPhrases.Any(AddressOf IsSendableItem) Then
             ShowMyMessage("没有连发内容可保存")
             Return
         End If
@@ -1227,7 +1412,7 @@ Public Class MainWindow1
         Dim preset As New RapidFirePreset With {
             .IntervalMilliseconds = interval,
             .SendLoop = ChkSendLoop.IsChecked.GetValueOrDefault(False),
-            .Items = sendPhrases.ToList()
+            .Items = sendPhrases.Select(AddressOf CloneSendItem).ToList()
         }
         Dim tempFile As String = dialog.FileName & "." & Guid.NewGuid().ToString("N") & ".tmp"
         Try
@@ -1269,7 +1454,7 @@ Public Class MainWindow1
             Dim isLegacy As Boolean = String.Equals(Path.GetExtension(filePath), ".lcslst", StringComparison.OrdinalIgnoreCase)
             Dim preset As RapidFirePreset
             If isLegacy Then
-                Dim legacyItems As List(Of String) = File.ReadAllText(filePath, New UTF8Encoding(False, True)).Split(New String() {"★"}, StringSplitOptions.None).ToList()
+                Dim legacyItems As List(Of RapidFireItem) = File.ReadAllText(filePath, New UTF8Encoding(False, True)).Split(New String() {"★"}, StringSplitOptions.None).Select(Function(text) RapidFireItem.CreateText(text)).ToList()
                 If legacyItems.Count < 1 OrElse legacyItems.Count > RapidFirePresetCodec.MaximumItemCount Then Throw New InvalidDataException("经典版条目数量无效。")
                 Dim currentInterval As Integer = 100
                 Integer.TryParse(TxtSendInterval.Text, currentInterval)
@@ -1282,6 +1467,10 @@ Public Class MainWindow1
                 preset = RapidFirePresetCodec.Deserialize(File.ReadAllBytes(filePath))
             End If
 
+            For Each item As RapidFireItem In preset.Items.Where(Function(value) value.Kind = RapidFireItemKind.Image)
+                LoadBitmap(item.ImageBytes)
+            Next
+
             If isSending Then StopSend()
             sendPhrases.Clear()
             sendPhrases.AddRange(preset.Items)
@@ -1292,6 +1481,190 @@ Public Class MainWindow1
             If showSuccessMessage Then ShowMyMessage("连发预设已打开。")
         Catch ex As Exception
             ShowMyMessage("无法打开连发预设：" & ex.Message)
+        End Try
+    End Sub
+
+    Private Shared Function IsSendableItem(item As RapidFireItem) As Boolean
+        Return item IsNot Nothing AndAlso ((item.Kind = RapidFireItemKind.Image AndAlso item.ImageBytes IsNot Nothing AndAlso item.ImageBytes.Length > 0) OrElse (item.Kind = RapidFireItemKind.Text AndAlso Not String.IsNullOrWhiteSpace(item.Text)))
+    End Function
+
+    Private Shared Function CloneSendItem(item As RapidFireItem) As RapidFireItem
+        Return New RapidFireItem With {
+            .Kind = item.Kind,
+            .Text = item.Text,
+            .FileName = item.FileName,
+            .ImageBytes = If(item.ImageBytes Is Nothing, Nothing, DirectCast(item.ImageBytes.Clone(), Byte()))
+        }
+    End Function
+
+    Private Shared Function LoadBitmap(imageBytes As Byte()) As BitmapSource
+        If imageBytes Is Nothing OrElse imageBytes.Length = 0 Then Throw New InvalidDataException("图片内容为空。")
+        Using stream As New MemoryStream(imageBytes, False)
+            Dim bitmap As New BitmapImage()
+            bitmap.BeginInit()
+            bitmap.CacheOption = BitmapCacheOption.OnLoad
+            bitmap.StreamSource = stream
+            bitmap.EndInit()
+            bitmap.Freeze()
+            Return bitmap
+        End Using
+    End Function
+
+    Private Sub SetImageClipboardData(imageBytes As Byte())
+        Dim bitmap As BitmapSource = LoadBitmap(imageBytes)
+        Dim pngBytes As Byte()
+        Using pngStream As New MemoryStream()
+            Dim encoder As New PngBitmapEncoder()
+            encoder.Frames.Add(BitmapFrame.Create(bitmap))
+            encoder.Save(pngStream)
+            pngBytes = pngStream.ToArray()
+        End Using
+
+        activeImageClipboardData = New DataObject()
+        activeImageClipboardData.SetImage(bitmap)
+        activeImageClipboardData.SetData("PNG", New MemoryStream(pngBytes, False), False)
+        'copy=False 避免 OLE 同步持久化被第三方剪贴板监听器无限阻塞。
+        Clipboard.SetDataObject(activeImageClipboardData, False)
+    End Sub
+
+#End Region
+
+#Region "Others"
+    Private Sub OnUserPreferenceChanged(sender As Object, e As UserPreferenceChangedEventArgs)
+        If Not Dispatcher.CheckAccess() Then
+            Dispatcher.BeginInvoke(New Action(Of Object, UserPreferenceChangedEventArgs)(AddressOf OnUserPreferenceChanged), sender, e)
+            Return
+        End If
+        '检查用户是否在程序打开时切换了系统主题或强调色
+        If e.Category = UserPreferenceCategory.General Then
+            '检测是否设置为自动跟随系统主题
+            If ReadSetting("DoAutoSwitchTheme", 0) = 1 Then
+                '判断当前是否启用深色模式
+                Dim isDarkMode As Boolean = IsDarkModeEnabled()
+                '切换主题到深色或浅色模式
+                SwitchTheme(isDarkMode)
+                WriteSetting("IsDarkMode", If(isDarkMode, 1, 0))
+            End If
+        End If
+        If e.Category = UserPreferenceCategory.Color OrElse e.Category = UserPreferenceCategory.General Then
+            ApplySystemAccentColor()
+        End If
+    End Sub
+    '欢迎界面的底部链接
+    Private Sub Button_Click_1(sender As Object, e As RoutedEventArgs)
+        Process.Start("https://sysbbs.cn/")
+    End Sub
+
+    Private Sub Button_Click_2(sender As Object, e As RoutedEventArgs)
+        Process.Start("https://qm.qq.com/q/SIZ1MaTKoe")
+    End Sub
+
+    Private Sub MainWindow1_Closing(sender As Object, e As ComponentModel.CancelEventArgs) Handles MyBase.Closing
+        Visibility = Visibility.Hidden
+        e.Cancel = True
+    End Sub
+
+    Private Sub ToggleButton_Click(sender As Object, e As RoutedEventArgs)
+        If pinButton.IsChecked = True Then
+            Topmost = True
+            pinButton.SetResourceReference(ContentControl.ContentProperty, "Icon.Unpin")
+        Else
+            Topmost = False
+            pinButton.SetResourceReference(ContentControl.ContentProperty, "Icon.Pin")
+        End If
+    End Sub
+
+    Public Sub ShowWindow()
+        ShowInTaskbar = True
+        Show()
+    End Sub
+
+    Public Sub ToggleMainWindowVisibility()
+        If IsVisible AndAlso WindowState <> WindowState.Minimized Then
+            Hide()
+            Return
+        End If
+
+        ShowInTaskbar = True
+        Show()
+        WindowState = WindowState.Normal
+        Activate()
+        SetForegroundWindow(New WindowInteropHelper(Me).Handle)
+    End Sub
+
+    '检查更新
+    Private Async Sub UpdButton_Click(sender As Object, e As RoutedEventArgs)
+        UpdateButton.IsEnabled = False
+        UpdateProgressRing.Visibility = Visibility.Visible
+        Using httpClient As HttpClient = UpdateModule.CreateHttpClient()
+            Dim zipPath As String = Nothing
+            Dim extractPath As String = Nothing
+            Try
+                Dim release As UpdateRelease = Await UpdateModule.GetLatestReleaseAsync(httpClient)
+                Dim latestVersion As Version = UpdateModule.GetReleaseVersion(release)
+                Dim currentVersion As Version = My.Application.Info.Version
+                If latestVersion <= currentVersion Then
+                    ShowMyMessage("当前已是最新版本")
+                    Return
+                End If
+
+                Dim asset As UpdateAsset = UpdateModule.GetZipAsset(release)
+                Dim answer As MsgBoxResult = MsgBox(
+                    "检测到新版本，是否立即下载并启动？" & vbCrLf &
+                    "当前版本：" & currentVersion.ToString() & vbCrLf &
+                    "最新版本：" & latestVersion.ToString(),
+                    MsgBoxStyle.YesNo Or MsgBoxStyle.Question,
+                    "更新提示")
+                If answer <> MsgBoxResult.Yes Then
+                    Return
+                End If
+                Dim updateRoot As String = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LCS", "keyboardmgr2", "updates")
+                Directory.CreateDirectory(updateRoot)
+                zipPath = Path.Combine(updateRoot, "update-" & Guid.NewGuid().ToString("N") & ".zip")
+                extractPath = Path.Combine(updateRoot, latestVersion.ToString() & "-" & Guid.NewGuid().ToString("N"))
+                Await UpdateModule.DownloadUpdateAsync(httpClient, New Uri(asset.browser_download_url, UriKind.Absolute), zipPath)
+                UpdateModule.VerifyFileSha256(zipPath, asset.digest)
+                UpdateModule.ExtractUpdateSafely(zipPath, extractPath)
+                Dim executablePath As String = UpdateModule.FindUpdateExecutable(extractPath)
+
+                Dim currentProcessId As Integer = Diagnostics.Process.GetCurrentProcess().Id
+                Diagnostics.Process.Start(New Diagnostics.ProcessStartInfo With {
+                    .FileName = executablePath,
+                    .Arguments = "--wait-for-pid=" & currentProcessId.ToString(Globalization.CultureInfo.InvariantCulture),
+                    .WorkingDirectory = Path.GetDirectoryName(executablePath),
+                    .UseShellExecute = True
+                })
+                FloatingWindow.Instance.StopApp()
+            Catch ex As HttpRequestException
+                ShowMyMessage("获取更新失败：无法从GitHub拉取更新，请检查您的网络环境" & vbCrLf & ex.Message)
+            Catch ex As TaskCanceledException
+                ShowMyMessage("获取更新失败：从GitHub拉取更新超时，请检查您的网络环境。")
+            Catch ex As Exception
+                If extractPath IsNot Nothing AndAlso Directory.Exists(extractPath) Then
+                    Try
+                        Directory.Delete(extractPath, True)
+                    Catch
+                    End Try
+                End If
+                ShowMyMessage("获取更新失败：" & ex.Message)
+            Finally
+                If zipPath IsNot Nothing AndAlso File.Exists(zipPath) Then
+                    Try
+                        File.Delete(zipPath)
+                    Catch
+                    End Try
+                End If
+                UpdateButton.IsEnabled = True
+                UpdateProgressRing.Visibility = Visibility.Collapsed
+            End Try
+        End Using
+    End Sub
+
+    Private Sub UpdDatabtn_Click(sender As Object, e As RoutedEventArgs)
+        Try
+            Process.Start("https://sysbbs.cn/d/512")
+        Catch ex As Exception
+            ShowMyMessage("无法打开更新日志：" & ex.Message)
         End Try
     End Sub
 

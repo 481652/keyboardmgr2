@@ -13,6 +13,11 @@ Module ThemeModule
     Private Function DwmExtendFrameIntoClientArea(hWnd As IntPtr, ByRef margins As Margins) As Integer
     End Function
 
+    <DllImport("dwmapi.dll", PreserveSig:=True)>
+    Private Function DwmGetColorizationColor(ByRef colorizationColor As UInteger,
+                                             <MarshalAs(UnmanagedType.Bool)> ByRef opaqueBlend As Boolean) As Integer
+    End Function
+
     <DllImport("user32.dll")>
     Private Function SetWindowCompositionAttribute(hWnd As IntPtr, ByRef data As WindowCompositionAttributeData) As Boolean
     End Function
@@ -63,6 +68,7 @@ Module ThemeModule
         Windows.Application.Current.Resources.MergedDictionaries.Clear()
         Windows.Application.Current.Resources.MergedDictionaries.Add(newResourceDict)
         isDarkTheme = isDarkMode
+        ApplySystemAccentColor()
 
         If Windows.Application.Current.MainWindow IsNot Nothing Then
             Windows.Application.Current.MainWindow.UpdateLayout()
@@ -70,6 +76,37 @@ Module ThemeModule
         End If
         UpdateWindowBackdrops()
     End Sub
+
+    Public Sub ApplySystemAccentColor()
+        Dim accent As Color = GetSystemAccentColor()
+        Dim hoverTarget As Color = If(isDarkTheme, Colors.White, Colors.Black)
+        Dim hover As Color = BlendColor(accent, hoverTarget, If(isDarkTheme, 0.14, 0.1))
+        Dim pressed As Color = BlendColor(accent, hoverTarget, If(isDarkTheme, 0.24, 0.18))
+        Dim resources = Windows.Application.Current.Resources
+
+        resources("AccentColorValue") = accent
+        resources("AccentColor") = New SolidColorBrush(accent)
+        resources("AccentHoverColor") = New SolidColorBrush(hover)
+        resources("AccentPressedColor") = New SolidColorBrush(pressed)
+        resources("AccentSelectionFillColor") = New SolidColorBrush(Color.FromArgb(42, accent.R, accent.G, accent.B))
+        resources("AccentSelectionBorderColor") = New SolidColorBrush(Color.FromArgb(96, accent.R, accent.G, accent.B))
+        resources("AccentListSelectionColor") = New SolidColorBrush(Color.FromArgb(54, accent.R, accent.G, accent.B))
+    End Sub
+
+    Private Function GetSystemAccentColor() As Color
+        Dim colorizationColor As UInteger
+        Dim opaqueBlend As Boolean
+        DwmGetColorizationColor(colorizationColor, opaqueBlend)
+        Return Color.FromRgb(CByte((colorizationColor >> 16) And &HFFUI),
+                             CByte((colorizationColor >> 8) And &HFFUI),
+                             CByte(colorizationColor And &HFFUI))
+    End Function
+
+    Private Function BlendColor(source As Color, target As Color, amount As Double) As Color
+        Return Color.FromRgb(CByte(source.R + (CInt(target.R) - source.R) * amount),
+                             CByte(source.G + (CInt(target.G) - source.G) * amount),
+                             CByte(source.B + (CInt(target.B) - source.B) * amount))
+    End Function
 
     Public Function IsDarkModeEnabled() As Boolean
         Const keyPath As String = "Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"

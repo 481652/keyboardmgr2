@@ -13,10 +13,11 @@
                 BorderBrush="{DynamicResource ButtonBorderColor}" BorderThickness="1" Background="{DynamicResource backgroundColor1}">
             <Grid>
                 <Image Margin="7,4,749,4" Source="/appiconnew.ico" MouseUp="Image_MouseUp"/>
-                <Button Style="{DynamicResource DefaultButton}" Content="{DynamicResource Icon.Close}" Margin="743,2,10,2" Height="40" Width="40" Click="Button_Click" BorderBrush="{x:Null}" Background="{x:Null}" />
-                <Button x:Name="stopButton" Style="{DynamicResource DefaultButton}" Content="{DynamicResource Icon.Stop}" Margin="700,4,58,4" Height="40" Width="40" Click="StopButton_Click" BorderBrush="{x:Null}" Visibility="Hidden" Background="{x:Null}" />
-                <Button x:Name="clickButton" Style="{DynamicResource DefaultButton}" Content="{DynamicResource Icon.Click}" Margin="598,4,160,4" Height="40" Width="40" Click="ClickButton_Click" BorderBrush="{x:Null}" Background="{x:Null}" />
+                <Button Style="{DynamicResource DefaultButton}" FontFamily="{DynamicResource iconFont}" FontSize="18" Content="{DynamicResource Icon.Close}" Margin="743,2,10,2" Height="40" Width="40" Click="Button_Click" BorderBrush="{x:Null}" Background="{x:Null}" />
+                <Button x:Name="stopButton" Style="{DynamicResource DefaultButton}" FontFamily="{DynamicResource iconFont}" FontSize="18" Content="{DynamicResource Icon.Stop}" Margin="700,4,58,4" Height="40" Width="40" Click="StopButton_Click" BorderBrush="{x:Null}" Visibility="Hidden" Background="{x:Null}" />
+                <Button x:Name="clickButton" Style="{DynamicResource DefaultButton}" FontFamily="{DynamicResource iconFont}" FontSize="18" Content="{DynamicResource Icon.Click}" Margin="598,4,160,4" Height="40" Width="40" Click="ClickButton_Click" BorderBrush="{x:Null}" Background="{x:Null}" />
                 <Button x:Name="sendButton" Style="{DynamicResource DefaultButton}" Content="{DynamicResource Icon.Send}"
+                        FontFamily="{DynamicResource iconFont}" FontSize="18"
                         Margin="643,4,115,4" Height="40" Width="40" Click="SendButton_Click"
                         BorderBrush="{x:Null}" Background="{x:Null}" ToolTip="打开列表连发" />
                 <Label x:Name="titleLabel" Content="键鼠管家" FontSize="18" HorizontalAlignment="Left" Margin="53,0,0,0" VerticalAlignment="Center" Width="259" FontFamily="Microsoft YaHei UI Light" />

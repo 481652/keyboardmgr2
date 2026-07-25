@@ -84,6 +84,7 @@ Public Class MyTrayicon
 
 
     Private Sub ShowMainWindow()
+        MainWindow1.Instance.ShowInTaskbar = True
         If MainWindow1.Instance.Visibility = Visibility.Hidden Then
             MainWindow1.Instance.Visibility = Visibility.Visible
         End If

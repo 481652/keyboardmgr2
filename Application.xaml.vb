@@ -7,6 +7,7 @@ Imports Microsoft.Win32
 
 Class Application
     Private Const ActivateCommand As String = "__ACTIVATE__"
+    Private Const AutoStartArgument As String = "--autostart"
     Private instanceMutex As Mutex
     Private isPrimaryInstance As Boolean
     Private pipeName As String
@@ -19,6 +20,7 @@ Class Application
     Private Const SHCNF_IDLIST As UInteger = 0
 
     Private Sub Application_Startup(sender As Object, e As StartupEventArgs)
+        WaitForPreviousVersionIfRequested()
         Dim userId As String = WindowsIdentity.GetCurrent().User.Value
         pipeName = "keyboardmgr2.singleinstance." & userId
         Dim createdNew As Boolean
@@ -26,18 +28,45 @@ Class Application
         isPrimaryInstance = createdNew
 
         Dim requestedFile As String = GetRequestedListFile()
+        Dim isAutoStart As Boolean = HasCommandLineArgument(AutoStartArgument)
         If Not isPrimaryInstance Then
-            ForwardRequest(If(requestedFile, ActivateCommand))
+            '登录时若程序已经运行，不应把原本隐藏的主窗口弹出来。
+            If Not isAutoStart Then ForwardRequest(If(requestedFile, ActivateCommand))
             Shutdown()
             Return
         End If
 
         RegisterListFileAssociations()
+        Dim useSystemTheme As Boolean = ReadSetting("DoAutoSwitchTheme", 1) = 1
+        SwitchTheme(If(useSystemTheme, IsDarkModeEnabled(), ReadSetting("IsDarkMode", 0) = 1))
         Dim window As New MainWindow1()
         MainWindow = window
+        If isAutoStart AndAlso requestedFile Is Nothing Then
+            window.ShowActivated = False
+            window.Opacity = 0
+        End If
         window.Show()
         StartPipeServer()
-        If requestedFile IsNot Nothing Then window.HandleExternalRequest(requestedFile)
+        If requestedFile IsNot Nothing Then
+            window.HandleExternalRequest(requestedFile)
+        ElseIf isAutoStart Then
+            window.Hide()
+            window.Opacity = 1
+            window.ShowActivated = True
+        End If
+    End Sub
+
+    Private Sub WaitForPreviousVersionIfRequested()
+        Const prefix As String = "--wait-for-pid="
+        Dim argument As String = Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(Function(value) value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        If argument Is Nothing Then Return
+        Dim processId As Integer
+        If Not Integer.TryParse(argument.Substring(prefix.Length), processId) OrElse processId <= 0 Then Return
+        Try
+            Diagnostics.Process.GetProcessById(processId).WaitForExit(30000)
+        Catch ex As ArgumentException
+            '旧进程已经退出。
+        End Try
     End Sub
 
     Private Sub Application_Exit(sender As Object, e As ExitEventArgs)
@@ -52,11 +81,16 @@ Class Application
 
     Private Function GetRequestedListFile() As String
         Dim arguments As String() = Environment.GetCommandLineArgs()
-        If arguments.Length < 2 Then Return Nothing
-        Dim extension As String = Path.GetExtension(arguments(1))
-        If Not String.Equals(extension, ".lcslst", StringComparison.OrdinalIgnoreCase) AndAlso
-           Not String.Equals(extension, ".lcslst2", StringComparison.OrdinalIgnoreCase) Then Return Nothing
-        Return Path.GetFullPath(arguments(1))
+        For Each argument As String In arguments.Skip(1)
+            Dim extension As String = Path.GetExtension(argument)
+            If String.Equals(extension, ".lcslst", StringComparison.OrdinalIgnoreCase) OrElse
+               String.Equals(extension, ".lcslst2", StringComparison.OrdinalIgnoreCase) Then Return Path.GetFullPath(argument)
+        Next
+        Return Nothing
+    End Function
+
+    Private Function HasCommandLineArgument(expectedArgument As String) As Boolean
+        Return Environment.GetCommandLineArgs().Skip(1).Any(Function(argument) String.Equals(argument, expectedArgument, StringComparison.OrdinalIgnoreCase))
     End Function
 
     Private Sub ForwardRequest(request As String)

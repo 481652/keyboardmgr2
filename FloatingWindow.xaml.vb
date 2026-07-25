@@ -532,6 +532,7 @@ Public Class FloatingWindow
     End Sub
 
     Private Sub ClickButton_Click(sender As Object, e As RoutedEventArgs) '连点
+        MainWindow1.Instance.ShowInTaskbar = True
         If MainWindow1.Instance.Visibility = Visibility.Hidden Then
             MainWindow1.Instance.Visibility = Visibility.Visible
         End If
@@ -540,6 +541,7 @@ Public Class FloatingWindow
     End Sub
 
     Private Sub SendButton_Click(sender As Object, e As RoutedEventArgs) '连发
+        MainWindow1.Instance.ShowInTaskbar = True
         If MainWindow1.Instance.Visibility = Visibility.Hidden Then
             MainWindow1.Instance.Visibility = Visibility.Visible
         End If
