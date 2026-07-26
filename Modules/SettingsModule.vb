@@ -1,8 +1,14 @@
 ﻿'存储、修改、读取及删除应用程序设置。
+Imports System.Linq
 Imports Microsoft.Win32
 
 Module SettingsModule
     Private Const RegistryPath As String = "Software\LCS\keyboardmgr"
+    '保留热键列表
+    Private ReadOnly ReservedHotkeys As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {
+        "Ctrl+A", "Ctrl+C", "Ctrl+F", "Ctrl+N", "Ctrl+O", "Ctrl+P", "Ctrl+S", "Ctrl+V", "Ctrl+W", "Ctrl+X", "Ctrl+Y", "Ctrl+Z",
+        "Alt+F4", "Alt+Tab", "Ctrl+Shift+Esc", "Ctrl+Alt+Delete", "Win+D", "Win+E", "Win+I", "Win+L", "Win+R", "Win+Tab"
+    }
 
     '写入设置
     Public Sub WriteSetting(key As String, value As Object)
@@ -63,7 +69,49 @@ Module SettingsModule
         If keys.Count = 1 AndAlso keys(0) = Key.None Then Return True
         Return False
     End Function
-        '加载设置中的按键
+
+    '防止全局热键覆盖复制、粘贴、切换窗口等常用系统快捷键。
+    Public Function IsReservedSystemHotkey(hotkey As String) As Boolean
+        If String.IsNullOrWhiteSpace(hotkey) Then Return False
+
+        Dim modifiers As New List(Of String)
+        Dim normalKeys As New List(Of String)
+        For Each part In hotkey.Split("+"c)
+            Dim keyPart As String = part.Trim()
+            Select Case keyPart.ToUpperInvariant()
+                Case "CTRL", "CONTROL", "LEFTCTRL", "RIGHTCTRL"
+                    If Not modifiers.Contains("Ctrl") Then modifiers.Add("Ctrl")
+                Case "SHIFT", "LEFTSHIFT", "RIGHTSHIFT"
+                    If Not modifiers.Contains("Shift") Then modifiers.Add("Shift")
+                Case "ALT", "LEFTALT", "RIGHTALT", "SYSTEM"
+                    If Not modifiers.Contains("Alt") Then modifiers.Add("Alt")
+                Case "WIN", "LWIN", "RWIN", "WINDOWS"
+                    If Not modifiers.Contains("Win") Then modifiers.Add("Win")
+                Case Else
+                    If keyPart.Length = 1 Then keyPart = keyPart.ToUpperInvariant()
+                    normalKeys.Add(keyPart)
+            End Select
+        Next
+
+        Dim orderedModifiers = {"Ctrl", "Shift", "Alt", "Win"}.Where(Function(item) modifiers.Contains(item))
+        Return ReservedHotkeys.Contains(String.Join("+", orderedModifiers.Concat(normalKeys)))
+    End Function
+
+    Public Function ReplaceReservedHotkey(settingName As String, defaultHotkey As String, ByRef wasReplaced As Boolean) As String
+        Dim hotkey As String = ReadSetting(settingName, defaultHotkey).ToString()
+        If String.IsNullOrWhiteSpace(hotkey) Then
+            hotkey = defaultHotkey
+            WriteSetting(settingName, hotkey)
+        End If
+        If IsReservedSystemHotkey(hotkey) Then
+            hotkey = defaultHotkey
+            WriteSetting(settingName, hotkey)
+            wasReplaced = True
+        End If
+        Return hotkey
+    End Function
+
+    '加载设置中的按键
     Public Function LoadKeyData(KeysStr As String) As List(Of Key)
         Dim savedKeys As New List(Of Key)
         If KeysStr.Length > 0 Then

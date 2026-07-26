@@ -23,7 +23,7 @@ Public Class MainWindow1
 #Region "DllImports&Veriables"
 
     'git id
-    Public Const id As String = "e31a3fe"
+    Public Const id As String = "10df9b1b"
     Private floatingWindow As New FloatingWindow
     Private Shared _instance As MainWindow1
     '移除最大化按钮
@@ -249,9 +249,10 @@ Public Class MainWindow1
 
     Private Sub InitializeHotkeySettings()
         '加载快捷键设置
-        If ReadSetting("StopActHotkeys", "") <> "" Then
-            KeyTextbox3.Text = ReadSetting("StopActHotkeys", "")
-            Dim StopActHotkeys_str = ReadSetting("StopActHotkeys", "")
+        Dim reservedHotkeyReplaced As Boolean = False
+        Dim StopActHotkeys_str As String = ReplaceReservedHotkey("StopActHotkeys", "Ctrl+G", reservedHotkeyReplaced)
+        If StopActHotkeys_str <> "" Then
+            KeyTextbox3.Text = StopActHotkeys_str
             Dim keyList = LoadKeyData(StopActHotkeys_str)
             stopActHotkeys = ConvertKeyLogToVirtualKeyCodes(keyList)
             If IsNoneKeyList(keyList) Then
@@ -261,7 +262,7 @@ Public Class MainWindow1
             WriteSetting("StopActHotkeys", "Ctrl+G")
         End If
         '加载摸鱼快捷键设置（始终加载，只要热键非空，与 IsLoafEnabled 无关）
-        Dim loafHotkeys_str As String = ReadSetting("LoafHotkeys", "").ToString()
+        Dim loafHotkeys_str As String = ReplaceReservedHotkey("LoafHotkeys", "Shift+Z", reservedHotkeyReplaced)
         If loafHotkeys_str <> "" Then
             KeyTextbox2.Text = loafHotkeys_str
             Dim keyList = LoadKeyData(loafHotkeys_str)
@@ -273,7 +274,7 @@ Public Class MainWindow1
             WriteSetting("LoafHotkeys", "Shift+Z")
         End If
         '加载连点开关热键
-        Dim clickHotkeyStr As String = ReadSetting("StopClickHotkeys", "")
+        Dim clickHotkeyStr As String = ReplaceReservedHotkey("StopClickHotkeys", "Ctrl+F1", reservedHotkeyReplaced)
         If clickHotkeyStr <> "" Then
             KeyTextbox4.Text = clickHotkeyStr
             Dim keyList = LoadKeyData(clickHotkeyStr)
@@ -288,7 +289,7 @@ Public Class MainWindow1
             stopClickHotkeys = ConvertKeyLogToVirtualKeyCodes(LoadKeyData(clickHotkeyStr))
         End If
         '加载连发开关热键
-        Dim sendHotkeyStr As String = ReadSetting("RapidFireHotkeys", "")
+        Dim sendHotkeyStr As String = ReplaceReservedHotkey("RapidFireHotkeys", "Ctrl+F2", reservedHotkeyReplaced)
         If sendHotkeyStr <> "" Then
             KeyTextbox5.Text = sendHotkeyStr
             Dim keyList = LoadKeyData(sendHotkeyStr)
@@ -306,6 +307,10 @@ Public Class MainWindow1
         Dim toggleMainStr As String = ReadSetting("ToggleMainWindowHotkeys", "").ToString()
         If toggleMainStr = "" Then toggleMainStr = ReadSetting("CustomHotkeys3", "Ctrl+F3").ToString()
         If toggleMainStr = "" Then toggleMainStr = "Ctrl+F3"
+        If IsReservedSystemHotkey(toggleMainStr) Then
+            toggleMainStr = "Ctrl+F3"
+            reservedHotkeyReplaced = True
+        End If
         WriteSetting("ToggleMainWindowHotkeys", toggleMainStr)
         DeleteSetting("CustomHotkeys3")
         DeleteSetting("CustomHotkeys4")
@@ -316,6 +321,9 @@ Public Class MainWindow1
             If IsNoneKeyList(keyList) Then
                 ShowMyMessage("无法加载主界面显示快捷键设置。")
             End If
+        End If
+        If reservedHotkeyReplaced Then
+            ShowMyMessage("检测到设置中包含系统常用快捷键，已自动恢复为对应的默认快捷键。")
         End If
     End Sub
 
@@ -400,6 +408,11 @@ Public Class MainWindow1
 #Region "Settings"
     '保存设置
     Private Sub Button_Click(sender As Object, e As RoutedEventArgs)
+        Dim reservedHotkeyName As String = GetReservedHotkeyName()
+        If reservedHotkeyName <> "" Then
+            ShowMyMessage("无法保存设置：" & reservedHotkeyName & "使用了系统常用快捷键，请更换后重试。")
+            Return
+        End If
         Select Case Combobox1.SelectedIndex
             Case 0
                 Dim isDarkMode As Boolean = IsDarkModeEnabled()
@@ -512,6 +525,19 @@ Public Class MainWindow1
         Return key1.Trim().Equals(key2.Trim(), StringComparison.OrdinalIgnoreCase)
     End Function
 
+    Private Function GetReservedHotkeyName() As String
+        Dim hotkeys = {
+            Tuple.Create("终止任务快捷键", KeyTextbox3.Text),
+            Tuple.Create("连点开关快捷键", KeyTextbox4.Text),
+            Tuple.Create("连发开关快捷键", KeyTextbox5.Text),
+            Tuple.Create("主界面显示/隐藏快捷键", KeyTextbox6.Text)
+        }
+        For Each hotkey In hotkeys
+            If IsReservedSystemHotkey(hotkey.Item2) Then Return hotkey.Item1
+        Next
+        Return ""
+    End Function
+
     '检测热键是否被其他程序占用（外部冲突），返回 True 表示可用
     Private Function TestHotkeyStringAvailability(hotkeyStr As String) As Boolean
         If String.IsNullOrWhiteSpace(hotkeyStr) Then Return False
@@ -536,7 +562,7 @@ Public Class MainWindow1
 
 #End Region
 
-#Region "ClickAndSend"
+#Region "Click"
     '连点
     Private Sub Button_Click_7(sender As Object, e As RoutedEventArgs) '保存连点设置
         Dim Keys As New List(Of UShort) From {}
@@ -826,6 +852,10 @@ Public Class MainWindow1
     '摸鱼
     Dim isLoafEnabled As Boolean = False
     Private Sub Button_Click_4(sender As Object, e As RoutedEventArgs) '保存摸鱼设置
+        If IsReservedSystemHotkey(KeyTextbox2.Text) Then
+            ShowMyMessage("无法保存设置：摸鱼快捷键使用了系统常用快捷键，请更换后重试。")
+            Return
+        End If
         WriteSetting("IsLoafEnabled", If(LoafToggle.IsChecked, 1, 0))
         If KeyTextbox2.Text <> "" Then
             '检测与其他软件的热键冲突（仅当热键变更时检测）
@@ -930,7 +960,8 @@ Public Class MainWindow1
 
 #End Region
 
-#Region "SendKeys" '连点与连发功能
+#Region "Send"
+    '连发
     Dim sendPhrases As New List(Of RapidFireItem)
     Dim currentSendIndex As Integer = -1
     Dim sendLoop As Boolean = False
