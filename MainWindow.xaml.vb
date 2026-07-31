@@ -23,7 +23,7 @@ Public Class MainWindow1
 #Region "DllImports&Veriables"
 
     'git id
-    Public Const id As String = "10df9b1b"
+    Public Const id As String = "5d1e5b1"
     Private floatingWindow As New FloatingWindow
     Private Shared _instance As MainWindow1
     '移除最大化按钮
@@ -1649,7 +1649,7 @@ Public Class MainWindow1
                 If answer <> MsgBoxResult.Yes Then
                     Return
                 End If
-                Dim updateRoot As String = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LCS", "keyboardmgr2", "updates")
+                Dim updateRoot As String = UpdateModule.GetUpdateRoot()
                 Directory.CreateDirectory(updateRoot)
                 zipPath = Path.Combine(updateRoot, "update-" & Guid.NewGuid().ToString("N") & ".zip")
                 extractPath = Path.Combine(updateRoot, latestVersion.ToString() & "-" & Guid.NewGuid().ToString("N"))
@@ -1658,10 +1658,10 @@ Public Class MainWindow1
                 UpdateModule.ExtractUpdateSafely(zipPath, extractPath)
                 Dim executablePath As String = UpdateModule.FindUpdateExecutable(extractPath)
 
-                Dim currentProcessId As Integer = Diagnostics.Process.GetCurrentProcess().Id
+                Dim currentProcess As Diagnostics.Process = Diagnostics.Process.GetCurrentProcess()
                 Diagnostics.Process.Start(New Diagnostics.ProcessStartInfo With {
                     .FileName = executablePath,
-                    .Arguments = "--wait-for-pid=" & currentProcessId.ToString(Globalization.CultureInfo.InvariantCulture),
+                    .Arguments = UpdateModule.BuildApplyUpdateArguments(currentProcess.MainModule.FileName, extractPath, currentProcess.Id),
                     .WorkingDirectory = Path.GetDirectoryName(executablePath),
                     .UseShellExecute = True
                 })

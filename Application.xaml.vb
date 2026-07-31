@@ -20,7 +20,18 @@ Class Application
     Private Const SHCNF_IDLIST As UInteger = 0
 
     Private Sub Application_Startup(sender As Object, e As StartupEventArgs)
-        WaitForPreviousVersionIfRequested()
+        Try
+            UpdateModule.WaitForRequestedProcess()
+            If UpdateModule.ApplyUpdateIfRequested() Then
+                Shutdown()
+                Return
+            End If
+            UpdateModule.CleanupUpdateIfRequested()
+        Catch ex As Exception
+            MessageBox.Show("自动更新失败：" & ex.Message, "更新失败", MessageBoxButton.OK, MessageBoxImage.Error)
+            Shutdown()
+            Return
+        End Try
         Dim userId As String = WindowsIdentity.GetCurrent().User.Value
         pipeName = "keyboardmgr2.singleinstance." & userId
         Dim createdNew As Boolean
@@ -54,19 +65,6 @@ Class Application
             window.Opacity = 1
             window.ShowActivated = True
         End If
-    End Sub
-
-    Private Sub WaitForPreviousVersionIfRequested()
-        Const prefix As String = "--wait-for-pid="
-        Dim argument As String = Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(Function(value) value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-        If argument Is Nothing Then Return
-        Dim processId As Integer
-        If Not Integer.TryParse(argument.Substring(prefix.Length), processId) OrElse processId <= 0 Then Return
-        Try
-            Diagnostics.Process.GetProcessById(processId).WaitForExit(30000)
-        Catch ex As ArgumentException
-            '旧进程已经退出。
-        End Try
     End Sub
 
     Private Sub Application_Exit(sender As Object, e As ExitEventArgs)

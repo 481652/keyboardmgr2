@@ -24,6 +24,9 @@ Public Module UpdateModule
     Public Const LatestReleaseApiUrl As String = "https://api.github.com/repos/481652/keyboardmgr2/releases/latest"
     Public Const ReleasesPageUrl As String = "https://github.com/481652/keyboardmgr2/releases/latest"
     Public Const MaximumDownloadBytes As Long = 512L * 1024L * 1024L
+    Private Const ApplyUpdateArgument As String = "--apply-update="
+    Private Const CleanupUpdateArgument As String = "--cleanup-update="
+    Private Const WaitForProcessArgument As String = "--wait-for-pid="
     Private Const MaximumManifestBytes As Integer = 1024 * 1024
     Private Const MaximumExtractedBytes As Long = 1024L * 1024L * 1024L
     Private Const MaximumArchiveEntries As Integer = 5000
@@ -132,6 +135,110 @@ Public Module UpdateModule
         End Try
         If Not String.Equals(assemblyName.Name, "keyboardmgr2", StringComparison.OrdinalIgnoreCase) Then Throw New InvalidDataException("更新包中的主程序身份无效。")
         Return executables(0)
+    End Function
+
+    Public Function GetUpdateRoot() As String
+        Return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LCS", "keyboardmgr2", "updates")
+    End Function
+
+    Public Function BuildApplyUpdateArguments(targetExecutablePath As String, updateDirectory As String, processId As Integer) As String
+        Return QuoteArgument(ApplyUpdateArgument & Path.GetFullPath(targetExecutablePath)) & " " &
+               QuoteArgument(CleanupUpdateArgument & Path.GetFullPath(updateDirectory)) & " " &
+               WaitForProcessArgument & processId.ToString(Globalization.CultureInfo.InvariantCulture)
+    End Function
+
+    Public Sub WaitForRequestedProcess()
+        Dim value As String = GetArgumentValue(WaitForProcessArgument)
+        If value Is Nothing Then Return
+
+        Dim processId As Integer
+        If Not Integer.TryParse(value, processId) OrElse processId <= 0 Then Throw New ArgumentException("更新进程编号无效。")
+        Try
+            Using process As Diagnostics.Process = Diagnostics.Process.GetProcessById(processId)
+                If Not process.WaitForExit(30000) Then Throw New TimeoutException("等待旧版本退出超时。")
+            End Using
+        Catch ex As ArgumentException
+            '进程已退出。
+        End Try
+    End Sub
+
+    Public Function ApplyUpdateIfRequested() As Boolean
+        Dim targetExecutablePath As String = GetArgumentValue(ApplyUpdateArgument)
+        If targetExecutablePath Is Nothing Then Return False
+
+        Dim updateDirectory As String = GetArgumentValue(CleanupUpdateArgument)
+        If String.IsNullOrWhiteSpace(updateDirectory) Then Throw New ArgumentException("更新临时目录无效。")
+        targetExecutablePath = Path.GetFullPath(targetExecutablePath)
+        updateDirectory = ValidateUpdateDirectory(updateDirectory)
+
+        Dim sourceExecutablePath As String = Diagnostics.Process.GetCurrentProcess().MainModule.FileName
+        If Not IsPathInside(sourceExecutablePath, updateDirectory) Then Throw New InvalidDataException("更新程序不在受信任的临时目录中。")
+        If IsPathInside(targetExecutablePath, updateDirectory) Then Throw New InvalidDataException("原程序路径无效。")
+
+        Dim sourceDirectory As String = Path.GetDirectoryName(sourceExecutablePath)
+        Dim targetDirectory As String = Path.GetDirectoryName(targetExecutablePath)
+        Directory.CreateDirectory(targetDirectory)
+        For Each sourcePath As String In Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories)
+            Dim relativePath As String = sourcePath.Substring(sourceDirectory.TrimEnd(Path.DirectorySeparatorChar).Length).TrimStart(Path.DirectorySeparatorChar)
+            Dim targetPath As String = If(String.Equals(sourcePath, sourceExecutablePath, StringComparison.OrdinalIgnoreCase),
+                                          targetExecutablePath,
+                                          Path.Combine(targetDirectory, relativePath))
+            Dim parentDirectory As String = Path.GetDirectoryName(targetPath)
+            If Not String.IsNullOrEmpty(parentDirectory) Then Directory.CreateDirectory(parentDirectory)
+            File.Copy(sourcePath, targetPath, True)
+        Next
+
+        Dim currentProcessId As Integer = Diagnostics.Process.GetCurrentProcess().Id
+        Diagnostics.Process.Start(New Diagnostics.ProcessStartInfo With {
+            .FileName = targetExecutablePath,
+            .Arguments = QuoteArgument(CleanupUpdateArgument & updateDirectory) & " " & WaitForProcessArgument & currentProcessId.ToString(Globalization.CultureInfo.InvariantCulture),
+            .WorkingDirectory = targetDirectory,
+            .UseShellExecute = True
+        })
+        Return True
+    End Function
+
+    Public Sub CleanupUpdateIfRequested()
+        Dim updateDirectory As String = GetArgumentValue(CleanupUpdateArgument)
+        If updateDirectory Is Nothing Then Return
+
+        updateDirectory = ValidateUpdateDirectory(updateDirectory)
+        Dim currentExecutablePath As String = Diagnostics.Process.GetCurrentProcess().MainModule.FileName
+        If IsPathInside(currentExecutablePath, updateDirectory) Then Return
+
+        For attempt As Integer = 1 To 10
+            Try
+                If Directory.Exists(updateDirectory) Then Directory.Delete(updateDirectory, True)
+                Return
+            Catch ex As IOException When attempt < 10
+                Threading.Thread.Sleep(200)
+            Catch ex As UnauthorizedAccessException When attempt < 10
+                Threading.Thread.Sleep(200)
+            End Try
+        Next
+    End Sub
+
+    Private Function ValidateUpdateDirectory(directoryPath As String) As String
+        Dim fullPath As String = Path.GetFullPath(directoryPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+        If Not IsPathInside(fullPath, GetUpdateRoot()) Then Throw New InvalidDataException("更新临时目录不受信任。")
+        Return fullPath
+    End Function
+
+    Private Function IsPathInside(filePath As String, directoryPath As String) As Boolean
+        Dim fullPath As String = Path.GetFullPath(filePath)
+        Dim directoryRoot As String = Path.GetFullPath(directoryPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) & Path.DirectorySeparatorChar
+        Return fullPath.StartsWith(directoryRoot, StringComparison.OrdinalIgnoreCase)
+    End Function
+
+    Private Function GetArgumentValue(prefix As String) As String
+        Dim argument As String = Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(Function(value) value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        If argument Is Nothing Then Return Nothing
+        Return argument.Substring(prefix.Length)
+    End Function
+
+    Private Function QuoteArgument(argument As String) As String
+        If argument.Contains(""""c) Then Throw New ArgumentException("命令行参数包含非法字符。")
+        Return """" & argument & """"
     End Function
 
     Private Sub EnsureHttps(uri As Uri, description As String)
