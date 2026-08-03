@@ -155,7 +155,7 @@
                                              Foreground="{DynamicResource ButtonForegroundColor}" Background="{DynamicResource ControlFillColor}"
                                              BorderBrush="{DynamicResource ButtonBorderColor}" BorderThickness="1" FontSize="14" Padding="9"
                                              AcceptsTab="True" TextChanged="RichTextBox1_TextChanged"/>
-                                <TextBlock x:Name="SendEditorWatermark" Text="输入要发送的文字…" Opacity="0.5" Margin="11,10"
+                                <TextBlock x:Name="SendEditorWatermark" Text="先创建条目，再输入要发送的文字…" Opacity="0.5" Margin="15,10"
                                            VerticalAlignment="Top" IsHitTestVisible="False"/>
                                 <Border x:Name="SendImageEditor" Visibility="Collapsed" Background="{DynamicResource ControlFillColor}"
                                         BorderBrush="{DynamicResource ButtonBorderColor}" BorderThickness="1" Padding="12">

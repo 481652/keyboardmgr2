@@ -22,8 +22,6 @@ Public Class MainWindow1
 
 #Region "DllImports&Veriables"
 
-    'git id
-    Public Const id As String = "5d1e5b1"
     Private floatingWindow As New FloatingWindow
     Private Shared _instance As MainWindow1
     '移除最大化按钮
@@ -85,7 +83,8 @@ Public Class MainWindow1
         End Try
         ThemeModule.ApplyWindowBackdrop(Me, RootGrid, ThemeModule.isMicaEnabled AndAlso ThemeModule.IsWindows11_22H2OrLater())
         VerLabel.Text = "版本号：" & My.Application.Info.Version.Major & "." & My.Application.Info.Version.Minor & "." & My.Application.Info.Version.Build & "." & My.Application.Info.Version.Revision
-        GitID.Text = "Git ID：" & id
+        GitID.Text = "Git ID：获取中..."
+        LoadLatestCommitId()
         '首次显示用于创建 HWND、消息钩子和托盘图标，再应用实际显示模式
         floatingWindow.Show()
         floatingWindow.ApplyDisplayMode(FloatingWindowState)
@@ -96,6 +95,17 @@ Public Class MainWindow1
         Dim hwnd As IntPtr = New WindowInteropHelper(Me).Handle
         Dim style As Integer = GetWindowLong(hwnd, GWL_STYLE)
         SetWindowLong(hwnd, GWL_STYLE, style And Not WS_MAXIMIZEBOX)
+    End Sub
+
+    Private Async Sub LoadLatestCommitId()
+        Using httpClient As HttpClient = UpdateModule.CreateHttpClient()
+            Try
+                Dim commitId As String = Await UpdateModule.GetReleaseCommitIdAsync(httpClient, My.Application.Info.Version)
+                GitID.Text = If(commitId Is Nothing, "Git ID：未发布", "Git ID：" & commitId)
+            Catch
+                GitID.Text = "Git ID：获取失败"
+            End Try
+        End Using
     End Sub
 
     Public Sub HandleExternalRequest(filePath As String)

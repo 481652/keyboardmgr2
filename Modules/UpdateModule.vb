@@ -20,9 +20,14 @@ Public Class UpdateAsset
     Public Property digest As String
 End Class
 
+Public Class GitHubCommit
+    Public Property sha As String
+End Class
+
 Public Module UpdateModule
     Public Const LatestReleaseApiUrl As String = "https://api.github.com/repos/481652/keyboardmgr2/releases/latest"
     Public Const ReleasesPageUrl As String = "https://github.com/481652/keyboardmgr2/releases/latest"
+    Public Const CommitsApiUrl As String = "https://api.github.com/repos/481652/keyboardmgr2/commits/"
     Public Const MaximumDownloadBytes As Long = 512L * 1024L * 1024L
     Private Const ApplyUpdateArgument As String = "--apply-update="
     Private Const CleanupUpdateArgument As String = "--cleanup-update="
@@ -135,6 +140,29 @@ Public Module UpdateModule
         End Try
         If Not String.Equals(assemblyName.Name, "keyboardmgr2", StringComparison.OrdinalIgnoreCase) Then Throw New InvalidDataException("更新包中的主程序身份无效。")
         Return executables(0)
+    End Function
+
+    Public Async Function GetReleaseCommitIdAsync(httpClient As HttpClient, currentVersion As Version) As Task(Of String)
+        If currentVersion Is Nothing Then Throw New ArgumentNullException(NameOf(currentVersion))
+        Dim release As UpdateRelease = Await GetLatestReleaseAsync(httpClient)
+        If GetReleaseVersion(release) <> currentVersion Then Return Nothing
+        Dim releaseCommitUrl As String = CommitsApiUrl & Uri.EscapeDataString(release.tag_name.Trim())
+        Using response As HttpResponseMessage = Await httpClient.GetAsync(releaseCommitUrl, HttpCompletionOption.ResponseHeadersRead)
+            response.EnsureSuccessStatusCode()
+            EnsureHttps(response.RequestMessage.RequestUri, "发布提交信息地址")
+            If response.Content.Headers.ContentLength.HasValue AndAlso response.Content.Headers.ContentLength.Value > MaximumManifestBytes Then
+                Throw New InvalidDataException("发布提交信息过大。")
+            End If
+            Dim bytes As Byte() = Await response.Content.ReadAsByteArrayAsync()
+            If bytes.Length > MaximumManifestBytes Then Throw New InvalidDataException("发布提交信息过大。")
+            Dim serializer As New JavaScriptSerializer With {.MaxJsonLength = MaximumManifestBytes}
+            Dim commit As GitHubCommit = serializer.Deserialize(Of GitHubCommit)(Encoding.UTF8.GetString(bytes))
+            If commit Is Nothing OrElse String.IsNullOrWhiteSpace(commit.sha) OrElse commit.sha.Length < 7 OrElse
+               Not commit.sha.All(Function(character) Uri.IsHexDigit(character)) Then
+                Throw New FormatException("发布提交信息格式错误。")
+            End If
+            Return commit.sha.Substring(0, 7)
+        End Using
     End Function
 
     Public Function GetUpdateRoot() As String
