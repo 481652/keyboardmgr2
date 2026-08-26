@@ -95,6 +95,11 @@ Public Class MainWindow1
         Dim hwnd As IntPtr = New WindowInteropHelper(Me).Handle
         Dim style As Integer = GetWindowLong(hwnd, GWL_STYLE)
         SetWindowLong(hwnd, GWL_STYLE, style And Not WS_MAXIMIZEBOX)
+        '创建第一条“连发”项目
+        SaveCurrentItem()
+        sendPhrases.Add(RapidFireItem.CreateText("未命名条目"))
+        currentSendIndex = sendPhrases.Count - 1
+        UpdateItemDisplay()
     End Sub
 
     Private Async Sub LoadLatestCommitId()
@@ -129,6 +134,7 @@ Public Class MainWindow1
         WriteSetting("DoAutoStart", 0)
         WriteSetting("FloatingWinShowState", 1)
         WriteSetting("DoRandomOffsetOfClickSpeed", 0)
+        WriteSetting("DoClickHold", 0)
         WriteSetting("DoCustomizeCursorPos", 0)
         WriteSetting("ClickInterval", "10")
         WriteSetting("ClickMode", "LeftClick")
@@ -234,6 +240,10 @@ Public Class MainWindow1
             Textbox1.Text = ReadSetting("ClickInterval", "")
             CheckBox1.IsChecked = ReadSetting("DoRandomOffsetOfClickSpeed", 0) = 1
             CheckBox2.IsChecked = ReadSetting("DoRandomOffsetOfClickPosition", 0) = 1
+            CheckBox4.IsChecked = ReadSetting("DoClickHold", 0) = 1
+            If CheckBox4.IsChecked = True Then CheckBox1.IsChecked = False
+            CheckBox1.IsEnabled = CheckBox4.IsChecked <> True
+            UpdateClickIntervalVisibility()
             CheckBox3.IsChecked = ReadSetting("DoCustomizeCursorPos", 0) = 1
             Textbox2.Visibility = If(CheckBox3.IsChecked, Visibility.Visible, Visibility.Hidden)
             Textbox2.Text = ReadSetting("CursorPosition", "")
@@ -576,20 +586,21 @@ Public Class MainWindow1
     '连点
     Private Sub Button_Click_7(sender As Object, e As RoutedEventArgs) '保存连点设置
         Dim Keys As New List(Of UShort) From {}
-        If Textbox1.Text = "" Then
+        If CheckBox4.IsChecked <> True AndAlso Textbox1.Text = "" Then
             ShowMyMessage("无法保存设置：没有指定发送间隔")
             Return
         End If
         WriteSetting("DoClickSettingSaved", 1)
         WriteSetting("DoRandomOffsetOfClickSpeed", If(CheckBox1.IsChecked = True, 1, 0))
         WriteSetting("DoRandomOffsetOfClickPosition", If(CheckBox2.IsChecked = True, 1, 0))
+        WriteSetting("DoClickHold", If(CheckBox4.IsChecked = True, 1, 0))
         If CheckBox3.IsChecked = True Then
             WriteSetting("DoCustomizeCursorPos", 1)
             WriteSetting("CursorPosition", Textbox2.Text)
         Else
             WriteSetting("DoCustomizeCursorPos", 0)
         End If
-        WriteSetting("ClickInterval", Textbox1.Text)
+        If Textbox1.Text <> "" Then WriteSetting("ClickInterval", Textbox1.Text)
         If RadioButton1.IsChecked = True Then
             WriteSetting("ClickMode", "LeftClick")
         ElseIf RadioButton2.IsChecked = True Then
@@ -602,7 +613,7 @@ Public Class MainWindow1
                 ShowMyMessage("无法保存设置：没有指定要连点的键")
                 Return
             End If
-            If Textbox1.Text <= 50 Then
+            If CheckBox4.IsChecked <> True AndAlso Textbox1.Text <= 50 Then
                 ShowMyMessage("无法保存设置：键盘按键连点需要发送间隔大于50！")
                 Textbox1.Text = 60
                 Return
@@ -619,6 +630,30 @@ Public Class MainWindow1
         Else
             Textbox2.Visibility = Visibility.Hidden
         End If
+    End Sub
+
+    '长按与速度偏移互斥，与间隔设置互斥
+    Private Sub CheckBox1_Click(sender As Object, e As RoutedEventArgs)
+        If CheckBox1.IsChecked = True AndAlso CheckBox4.IsChecked = True Then
+            CheckBox4.IsChecked = False
+            UpdateClickIntervalVisibility()
+        End If
+        CheckBox4.IsEnabled = Not CheckBox1.IsChecked
+    End Sub
+
+    Private Sub CheckBox4_Click(sender As Object, e As RoutedEventArgs)
+        If CheckBox4.IsChecked = True AndAlso CheckBox1.IsChecked = True Then
+            CheckBox1.IsChecked = False
+        End If
+        CheckBox1.IsEnabled = Not CheckBox4.IsChecked
+        UpdateClickIntervalVisibility()
+    End Sub
+
+    Private Sub UpdateClickIntervalVisibility()
+        Dim visibility As Visibility = If(CheckBox4.IsChecked = True, Visibility.Collapsed, Visibility.Visible)
+        IntervalLabel.Visibility = visibility
+        Textbox1.Visibility = visibility
+        IntervalUnitLabel.Visibility = visibility
     End Sub
 
     Private Sub Textbox2_PreviewTextInput(sender As Object, e As TextCompositionEventArgs) '使用正则表达式检测部分textbox，让其只支持坐标输入
@@ -684,24 +719,55 @@ Public Class MainWindow1
     Dim clickTime As Integer = 10
     Dim isSpeedRandomOffset As Boolean = False
     Dim isPosRandomOffset As Boolean = False
+    Dim isMouseButtonHeld As Boolean = False
+    Dim isMouseHoldPending As Boolean = False
+    Dim isKeyboardButtonHeld As Boolean = False
+    Dim isKeyboardHoldPending As Boolean = False
+    Dim heldKeyboardKeys As New List(Of UShort)
+    Dim heldMouseButton As Integer = 0
     Dim clickBasePosition As POINTAPI
     Public timer1 As New Timer
     Public timer2 As New Timer
     Public timer3 As New Timer
+
+    '显示连点按键设置
+    Private Sub RadioButton1_Checked(sender As Object, e As RoutedEventArgs) Handles RadioButton1.Checked
+        If KeyPressStackPanel IsNot Nothing Then KeyPressStackPanel.Visibility = Visibility.Collapsed
+        If CheckBox4 IsNot Nothing Then CheckBox4.IsEnabled = True
+    End Sub
+    Private Sub RadioButton2_Checked(sender As Object, e As RoutedEventArgs) Handles RadioButton2.Checked
+        If KeyPressStackPanel IsNot Nothing Then KeyPressStackPanel.Visibility = Visibility.Collapsed
+        If CheckBox4 IsNot Nothing Then CheckBox4.IsEnabled = True
+    End Sub
+    Private Sub RadioButton3_Checked(sender As Object, e As RoutedEventArgs) Handles RadioButton3.Checked
+        If KeyPressStackPanel IsNot Nothing Then KeyPressStackPanel.Visibility = Visibility.Visible
+        If CheckBox4 IsNot Nothing Then CheckBox4.IsEnabled = True
+    End Sub
     Private Sub Button_Click_3(sender As Object, e As RoutedEventArgs) '开始连点
         If isClicking Then
             StopClick()
             Return
         End If
         If isSending Then StopSend()
-        If Textbox1.Text = "" Then
+        Dim isLongPress As Boolean = CheckBox4.IsChecked = True
+        If Not isLongPress AndAlso Textbox1.Text = "" Then
             ShowMyMessage("没有指定发送间隔")
             Return
-        ElseIf Textbox1.Text > 0 Then
-            clickTime = Textbox1.Text '此处隐式转换
+        ElseIf isLongPress OrElse Textbox1.Text > 0 Then
+            If Not isLongPress Then clickTime = Textbox1.Text '此处隐式转换
             isSpeedRandomOffset = CheckBox1.IsChecked = True
             isPosRandomOffset = CheckBox2.IsChecked = True
-            If CheckBox3.IsChecked = True Then '自定义鼠标位置
+            If isLongPress AndAlso RadioButton3.IsChecked = True Then
+                If Not PrepareClickKeys() Then Return
+                heldKeyboardKeys.Clear()
+                heldKeyboardKeys.AddRange(sendKeys)
+                isKeyboardHoldPending = True
+                isClicking = True
+                Hide()
+                floatingWindow.FloatingWindowEvent_Click()
+                Dispatcher.BeginInvoke(New Action(AddressOf BeginKeyboardHold), DispatcherPriority.Background)
+                Return
+            ElseIf CheckBox3.IsChecked = True Then '自定义鼠标位置
                 If Textbox2.Text = "" Or Textbox2.Text = "," Then
                     ShowMyMessage("没有指定自定义鼠标位置")
                     Return
@@ -712,11 +778,33 @@ Public Class MainWindow1
                     SetCursorPosition(x, y)
                     clickBasePosition.x = x
                     clickBasePosition.y = y
-                    ShowMyMessage("已确定鼠标位置：" & x & "," & y & "请勿移动鼠标！")
+                    ShowMyMessage("已确定鼠标位置：" & x & "," & y & "请勿移动鼠标！若要停止请按快捷键")
                 End If
             End If
-            If isPosRandomOffset AndAlso CheckBox3.IsChecked <> True Then GetCursorPos(clickBasePosition)
-            If RadioButton1.IsChecked = True Then '左键连点
+            If isLongPress Then
+                If CheckBox3.IsChecked <> True Then GetCursorPos(clickBasePosition)
+                If isPosRandomOffset Then
+                    clickBasePosition.x += random.Next(-15, 16)
+                    clickBasePosition.y += random.Next(-15, 16)
+                    SetCursorPosition(clickBasePosition.x, clickBasePosition.y)
+                End If
+            ElseIf isPosRandomOffset AndAlso CheckBox3.IsChecked <> True Then
+                GetCursorPos(clickBasePosition)
+            End If
+            If isLongPress Then '长按
+                isMouseHoldPending = True
+                isSpeedRandomOffset = False
+                If RadioButton1.IsChecked = True Then
+                    heldMouseButton = MOUSEEVENTF_LEFTDOWN
+                Else
+                    heldMouseButton = MOUSEEVENTF_RIGHTDOWN
+                End If
+                isClicking = True
+                Hide()
+                floatingWindow.FloatingWindowEvent_Click()
+                '等待启动按钮自身的鼠标抬起事件完成，避免它立即释放模拟的长按。
+                Dispatcher.BeginInvoke(New Action(AddressOf BeginMouseHold), DispatcherPriority.Background)
+            ElseIf RadioButton1.IsChecked = True Then '左键连点
                 AddHandler timer1.Elapsed, AddressOf Timer1_Elapsed
                 timer1.Interval = clickTime
                 timer1.AutoReset = True
@@ -738,7 +826,7 @@ Public Class MainWindow1
                 If clickTime > 50 Then
                     '清空上一次遗留的按键，避免多次启动时累积导致 Count 超过 4 而失效
                     sendKeys.Clear()
-                    If savedkeys.Count = 0 Then '这里判断有没有保存键
+                    If IsNoneKeyList(savedkeys) Then '没有有效的已保存按键时使用当前输入
                         For Each value As Byte In ConvertKeyLogToVirtualKeyCodes(GetKeyLog)
                             sendKeys.Add(Convert.ToByte(value))
                         Next
@@ -783,6 +871,46 @@ Public Class MainWindow1
             Return
         End If
     End Sub
+
+    Private Sub BeginMouseHold()
+        If Not isClicking OrElse Not isMouseHoldPending Then Return
+        isMouseHoldPending = False
+        isMouseButtonHeld = True
+        If heldMouseButton = MOUSEEVENTF_LEFTDOWN Then
+            mouse_event(MOUSEEVENTF_LEFTDOWN, clickBasePosition.x, clickBasePosition.y, 0, 0)
+        ElseIf heldMouseButton = MOUSEEVENTF_RIGHTDOWN Then
+            mouse_event(MOUSEEVENTF_RIGHTDOWN, clickBasePosition.x, clickBasePosition.y, 0, 0)
+        End If
+    End Sub
+
+    Private Sub BeginKeyboardHold()
+        If Not isClicking OrElse Not isKeyboardHoldPending Then Return
+        isKeyboardHoldPending = False
+        UserInputHandler.SendKeyCombinationDown(heldKeyboardKeys)
+        isKeyboardButtonHeld = True
+    End Sub
+
+    Private Function PrepareClickKeys() As Boolean
+        sendKeys.Clear()
+        If IsNoneKeyList(savedkeys) Then
+            If GetKeyLog() Is Nothing Then
+                ShowMyMessage("没有指定要发送的键")
+                Return False
+            End If
+            For Each value As Byte In ConvertKeyLogToVirtualKeyCodes(GetKeyLog)
+                sendKeys.Add(value)
+            Next
+        Else
+            For Each value As Byte In ConvertKeyLogToVirtualKeyCodes(savedkeys)
+                sendKeys.Add(value)
+            Next
+        End If
+        If sendKeys.Count < 1 OrElse sendKeys.Count > 4 Then
+            ShowMyMessage("无法发送该（快捷）键")
+            Return False
+        End If
+        Return True
+    End Function
 
     Dim random As New Random
     Private Sub Timer1_Elapsed(sender As Object, e As ElapsedEventArgs)
@@ -836,6 +964,23 @@ Public Class MainWindow1
     End Sub
 
     Public Sub StopClick()
+
+        isMouseHoldPending = False
+        isKeyboardHoldPending = False
+        If isKeyboardButtonHeld Then
+            UserInputHandler.SendKeyCombinationUp(heldKeyboardKeys)
+            isKeyboardButtonHeld = False
+            heldKeyboardKeys.Clear()
+        End If
+        If isMouseButtonHeld Then
+            If heldMouseButton = MOUSEEVENTF_LEFTDOWN Then
+                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+            ElseIf heldMouseButton = MOUSEEVENTF_RIGHTDOWN Then
+                mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
+            End If
+            isMouseButtonHeld = False
+            heldMouseButton = 0
+        End If
 
         RemoveHandler timer1.Elapsed, AddressOf Timer1_Elapsed
         timer1.Stop()
@@ -1096,6 +1241,7 @@ Public Class MainWindow1
         End If
     End Sub
 
+    '添加连发项
     Private Sub BtnAddItem_Click(sender As Object, e As RoutedEventArgs)
         SaveCurrentItem()
         sendPhrases.Add(RapidFireItem.CreateText(String.Empty))
@@ -1381,7 +1527,7 @@ Public Class MainWindow1
 
     Private Sub CompleteSend()
         StopSend()
-        '让最后一次 Enter 先由目标程序处理，再恢复并激活主窗口。
+        '让最后一次 Enter 先由目标程序处理，再恢复并激活主窗口
         sendCompletionTimer.Stop()
         imagePasteTimer.Stop()
         imagePastePending = False

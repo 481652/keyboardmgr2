@@ -67,23 +67,36 @@ Module UserInputHandler
     End Sub
 
     Public Sub SendKeyCombination(keys As List(Of UShort))
+        SendKeyCombinationDown(keys)
+        Threading.Thread.Sleep(50) ' 添加延时确保按键事件被识别
+        SendKeyCombinationUp(keys)
+    End Sub
+
+    Public Sub SendKeyCombinationDown(keys As List(Of UShort))
         For Each key In keys
-            If key = &HA2 OrElse key = &HA0 OrElse key = &H12 Then ' Ctrl, Shift, Alt
+            If IsModifierKey(key) Then
                 SendKey(key, True)
             End If
         Next
         ' 按下其余键
         For Each key In keys
-            If key <> &HA2 AndAlso key <> &HA0 AndAlso key <> &H12 Then ' 排除修饰键
+            If Not IsModifierKey(key) Then
                 SendKey(key, True)
             End If
         Next
-        Threading.Thread.Sleep(50) ' 添加延时确保按键事件被识别
-        ' 释放所有按键
-        For Each key In keys
-            SendKey(key, False)
+    End Sub
+
+    Public Sub SendKeyCombinationUp(keys As List(Of UShort))
+        For index As Integer = keys.Count - 1 To 0 Step -1
+            SendKey(keys(index), False)
         Next
     End Sub
+
+    Private Function IsModifierKey(key As UShort) As Boolean
+        Return key = &HA0 OrElse key = &HA1 OrElse key = &HA2 OrElse key = &HA3 OrElse
+               key = &HA4 OrElse key = &HA5 OrElse key = &H10 OrElse key = &H11 OrElse
+               key = &H12 OrElse key = &H5B OrElse key = &H5C
+    End Function
 
     <StructLayout(LayoutKind.Sequential)>
     Private Structure KeyboardInput

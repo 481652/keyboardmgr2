@@ -7,21 +7,22 @@
         mc:Ignorable="d"
         Background="{DynamicResource backgroundColor1}"
         Title="键鼠管家帮助与信息显示器" Height="550" Width="600" MinWidth="550" MinHeight="600">
-    <Grid >
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
 
-        <Label x:Name="HelpTheme"   
-    Grid.Column="0"
-    Margin="5,18,268,430"
-    Content="(帮助主题)"                 
-    FontSize="23"  
-    FontWeight="Light" ScrollViewer.VerticalScrollBarVisibility="Disabled" MinHeight="100" />
-        <ToggleButton x:Name="FontButton" Style="{DynamicResource topmostButtonStyle}" FontFamily="iconFont"  Content="大字体" HorizontalAlignment="Right" Height="36" VerticalAlignment="Top" Width="43" Click="ToggleButton_Click"/>
-        <ScrollViewer VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,70,0,0">
-            <TextBlock x:Name="HelpText" TextWrapping="WrapWithOverflow" Text="显示帮助与信息时出错，可能是LCS的开发人猿忘记添加内容了呢！" Grid.ColumnSpan="2" ScrollViewer.HorizontalScrollBarVisibility="Visible"/>
-
+        <Grid Margin="0,0,0,12">
+            <Label x:Name="HelpTheme" Content="(帮助主题)" FontSize="23" FontWeight="Light"/>
+            <ToggleButton x:Name="FontButton" Style="{DynamicResource topmostButtonStyle}"
+                          FontFamily="iconFont" Content="大字体" HorizontalAlignment="Right"
+                          Height="36" Width="43" Click="ToggleButton_Click"/>
+        </Grid>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                      VerticalContentAlignment="Stretch" HorizontalContentAlignment="Stretch">
+            <TextBlock x:Name="HelpText" TextWrapping="WrapWithOverflow"
+                       Text="显示帮助与信息时出错，可能是LCS的开发人猿忘记添加内容了呢！"/>
         </ScrollViewer>
-
-
-
     </Grid>
 </Window>
