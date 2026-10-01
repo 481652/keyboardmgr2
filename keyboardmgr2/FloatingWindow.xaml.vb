@@ -5,6 +5,9 @@ Imports System.Windows.Forms
 Imports System.Windows.Interop
 Imports System.Windows.Media.Animation
 
+#Const WIDTH = 800
+#Const HEIGHT = 50
+
 
 Public Class FloatingWindow
     Inherits Window
@@ -216,10 +219,12 @@ Public Class FloatingWindow
 
     Public Sub SetWindowTopMost()
         Topmost = True
+        JellyBounce(-2, 250, 3)
     End Sub
 
     Public Sub SetWindowNotTopMost()
         Topmost = False
+        JellyBounce(-2, 250, 3)
     End Sub
 
 #End Region
@@ -284,6 +289,7 @@ Public Class FloatingWindow
     Private foldDelayTimer As Threading.Timer
     Private floatingHwnd As IntPtr = IntPtr.Zero
     Private pointerWasOver As Boolean = False
+    Private isJellyBouncePlaying As Boolean = False
 
     Private ReadOnly Property FoldedTop As Double
         Get
@@ -338,16 +344,69 @@ Public Class FloatingWindow
             End Sub
         BeginAnimation(TopProperty, animation)
     End Sub
+
+    Public Sub JellyBounce(wSqeezePercent As Double, duration As Double, springiness As Integer)
+        If isJellyBouncePlaying Then Return
+        isJellyBouncePlaying = True
+
+        Dim center As Double = ActualHeight + ActualWidth / 2
+
+        Dim rStart As Double = ActualWidth
+        Dim lStart As Double = Left
+        Dim targetR As Double = rStart * (1 + wSqeezePercent / 100)
+        Dim targetL As Double = lStart - (targetR - rStart) / 2
+
+        Dim timeSpan As TimeSpan = TimeSpan.FromMilliseconds(duration)
+
+        Dim easeR As New DoubleAnimation(rStart, targetR, timeSpan) With {
+            .EasingFunction = New BackEase With {
+                .EasingMode = EasingMode.EaseIn
+            }
+        }
+
+        Dim easeBackR As New DoubleAnimation(targetR, rStart, timeSpan) With {
+            .EasingFunction = New BackEase With {
+                .EasingMode = EasingMode.EaseOut
+            }
+        }
+
+        Dim easeL As New DoubleAnimation(lStart, targetL, timeSpan) With {
+            .EasingFunction = New BackEase With {
+                .EasingMode = EasingMode.EaseIn
+            }
+        }
+
+        Dim easeBackL As New DoubleAnimation(targetL, lStart, timeSpan) With {
+            .EasingFunction = New BackEase With {
+                .EasingMode = EasingMode.EaseOut
+            }
+        }
+
+        AddHandler easeR.Completed, Sub()
+                                        BeginAnimation(WidthProperty, easeBackR)
+                                        BeginAnimation(LeftProperty, easeBackL)
+                                    End Sub
+
+        AddHandler easeBackR.Completed, Sub()
+                                            BeginAnimation(WidthProperty, Nothing)
+                                            BeginAnimation(LeftProperty, Nothing)
+                                            Width = 800 ' IDE常量打不出来，这大小写检查没力气
+                                            Height = 50 ' 手动标一下当WIDTH, HEIGHT使了
+                                            isJellyBouncePlaying = False
+                                        End Sub
+        BeginAnimation(WidthProperty, easeR)
+        BeginAnimation(LeftProperty, easeL)
+    End Sub
 #End Region
 
 #Region "Detecting mouse"
     Private Sub CancelFoldTimer()
         foldDelayTimer?.Dispose()
         foldDelayTimer = Nothing
-        animationVersion += 1
-        Dim currentTop As Double = Top
-        BeginAnimation(TopProperty, Nothing)
-        Top = currentTop
+        'animationVersion += 1
+        'Dim currentTop As Double = Top
+        'BeginAnimation(TopProperty, Nothing)
+        'Top = currentTop
     End Sub
 
     Private Sub ScheduleFold()
@@ -358,15 +417,16 @@ Public Class FloatingWindow
                 If floatingHwnd = IntPtr.Zero OrElse IsPointerOverWindow() Then Return
                 Dim rect As NativeRect
                 If GetWindowRect(floatingHwnd, rect) Then
-                    Dim foldedY As Integer = -(rect.Bottom - rect.Top) + 8
-                    SetWindowPos(floatingHwnd, IntPtr.Zero, rect.Left, foldedY, 0, 0, SWP_NOSIZE Or SWP_NOZORDER Or SWP_NOACTIVATE)
+                    'Dim foldedY As Integer = -(rect.Bottom - rect.Top) + 8
+                    'SetWindowPos(floatingHwnd, IntPtr.Zero, rect.Left, foldedY, 0, 0, SWP_NOSIZE Or SWP_NOZORDER Or SWP_NOACTIVATE)
                     foldTargeted = True
                     Dispatcher.BeginInvoke(New Action(
                         Sub()
-                            animationVersion += 1
-                            BeginAnimation(TopProperty, Nothing)
-                            Top = FoldedTop
-                            isFloatingWindowFolded = True
+                            'animationVersion += 1
+                            'BeginAnimation(TopProperty, Nothing)
+                            'Top = FoldedTop
+                            'isFloatingWindowFolded = True
+                            MoveTo(-40, True)
                         End Sub))
                 End If
             End Sub, Nothing, TimeSpan.FromSeconds(3), Threading.Timeout.InfiniteTimeSpan)
@@ -386,18 +446,10 @@ Public Class FloatingWindow
             Return
         End If
 
-        Dim rect As NativeRect
-        If GetWindowRect(floatingHwnd, rect) AndAlso rect.Top < 0 Then
-            SetWindowPos(floatingHwnd, IntPtr.Zero, rect.Left, 0, 0, 0, SWP_NOSIZE Or SWP_NOZORDER Or SWP_NOACTIVATE)
-        End If
         Dispatcher.BeginInvoke(New Action(
             Sub()
                 If FloatingWindowState = 2 Then
-                    animationVersion += 1
-                    BeginAnimation(TopProperty, Nothing)
-                    Top = 0
-                    foldTargeted = False
-                    isFloatingWindowFolded = False
+                    MoveTo(0, False)
                 End If
             End Sub))
     End Sub
@@ -412,7 +464,6 @@ Public Class FloatingWindow
     Private Sub Window_MouseEnter(sender As Object, e As Input.MouseEventArgs)
         If FloatingWindowState = 2 Then
             CancelFoldTimer()
-            MoveTo(0, False)
         End If
     End Sub
 
@@ -549,6 +600,4 @@ Public Class FloatingWindow
         MainWindow1.Instance.Activate()
         MainWindow1.Instance.TabControl1.SelectedIndex = 2
     End Sub
-
-
 End Class
