@@ -4,8 +4,13 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 17.11.35303.130
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "keyboardmgr2", "keyboardmgr2.vbproj", "{9F2276F0-03EB-44CF-B870-8DD29CC3AA0C}"
+	ProjectSection(ProjectDependencies) = postProject
+		{6E4C9D2A-1B3F-4E7A-9C5D-8F0A2B4E6D1C} = {6E4C9D2A-1B3F-4E7A-9C5D-8F0A2B4E6D1C}
+	EndProjectSection
 EndProject
 Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "LCSWindowSelector", "..\WindowSelector\LCSWindowSelector.vbproj", "{370A051A-B965-4DED-97C8-EF0BF9A50214}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OpCore", "..\OpCore\OpCore.vcxproj", "{6E4C9D2A-1B3F-4E7A-9C5D-8F0A2B4E6D1C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +26,10 @@ Global
 		{370A051A-B965-4DED-97C8-EF0BF9A50214}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{370A051A-B965-4DED-97C8-EF0BF9A50214}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{370A051A-B965-4DED-97C8-EF0BF9A50214}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6E4C9D2A-1B3F-4E7A-9C5D-8F0A2B4E6D1C}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{6E4C9D2A-1B3F-4E7A-9C5D-8F0A2B4E6D1C}.Debug|Any CPU.Build.0 = Debug|x64
+		{6E4C9D2A-1B3F-4E7A-9C5D-8F0A2B4E6D1C}.Release|Any CPU.ActiveCfg = Release|x64
+		{6E4C9D2A-1B3F-4E7A-9C5D-8F0A2B4E6D1C}.Release|Any CPU.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -83,7 +83,7 @@
                             </StackPanel>
                         </StackPanel>
                     </StackPanel>
-                        <Grid Grid.Row="4" Margin="12,0,0,0">
+                    <Grid Grid.Row="4" Margin="12,0,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="113"/>
@@ -131,7 +131,12 @@
 
                     <StackPanel Grid.ColumnSpan="3" Margin="2,0,0,12">
                         <TextBlock Text="连发" FontSize="24" FontWeight="Light" Margin="0,5,0,0"/>
-                        <TextBlock Text="按列表顺序逐条发送，每条发送后自动按 Enter" Opacity="0.68" Margin="0,3,0,0"/>
+                        <TextBlock Text="按列表顺序逐条发送，自动识别目标窗口并填充文字后按发送方式发送" Opacity="0.68" Margin="0,3,0,0"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <TextBlock x:Name="SelectedSendTargetLabel" Text="目标窗口：自动识别" Opacity="0.68" VerticalAlignment="Center"/>
+                            <Button Style="{DynamicResource LinkButton}" Content="手动选取" Margin="12,0,0,0" Click="BtnPickSendTarget_Click"/>
+                            <Button Style="{DynamicResource LinkButton}" Content="点选输入框" Margin="12,0,0,0" Click="BtnCaptureInputBox_Click"/>
+                        </StackPanel>
                     </StackPanel>
 
                     <Border Grid.Row="1" Grid.Column="0" Style="{DynamicResource CardBorderStyle}">
@@ -244,6 +249,53 @@
                     </Grid>
                 </Grid>
             </TabItem>
+            <TabItem Header="录制">
+                <Grid Background="{DynamicResource backgroundColor1}" Margin="10,8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Label Grid.Row="0" Content="录制" FontSize="23" FontWeight="Light"/>
+                        <Label Grid.Row="1" Content="录制你的键鼠操作，并在需要时重放。"/>
+                        <StackPanel Grid.Row="2" Orientation="Horizontal">
+                            <Button Style="{DynamicResource DefaultButton}" Content="开始录制" HorizontalAlignment="Left" Height="36" Width="173" Margin="15,14,0,0" Click="Button_Click_6"/>
+                            <Button Style="{DynamicResource DefaultButton}" Content="停止录制" HorizontalAlignment="Left" Height="36" Width="173" Margin="15,14,0,0" Click="Button_Click_8"/>
+                            <Button Style="{DynamicResource DefaultButton}" Content="删除录制" HorizontalAlignment="Left" Height="36" Width="173" Margin="15,14,0,0" Click="Button_Click_9"/>
+                        </StackPanel>
+                        <Grid Grid.Row="3" Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="3*"/>
+                                <ColumnDefinition Width="8*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Margin="0,0,8,0" Padding="6" BorderThickness="1" BorderBrush="#FFCCCCCC" CornerRadius="4" VerticalAlignment="Stretch">
+                                <ListBox x:Name="RecordList" BorderThickness="0" Background="Transparent" VerticalAlignment="Stretch" />
+                            </Border>
+                            <TextBox x:Name="RecordContent" BorderThickness="0" Background="Transparent" Grid.Column="1" AcceptsReturn="True" TextWrapping="Wrap" VerticalAlignment="Stretch"/>
+                        </Grid>
+
+                    </Grid>
+
+                </Grid>
+            </TabItem>
+            <TabItem Header="脚本">
+                <Grid Background="{DynamicResource backgroundColor1}" Margin="10,8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Label Content="脚本" FontSize="23" FontWeight="Light"/>
+
+                </Grid>
+            </TabItem>
             <TabItem Header="选项">
                 <Grid Background="{DynamicResource backgroundColor1}">
                     <Grid.RowDefinitions>
@@ -254,6 +306,36 @@
                         <StackPanel Margin="10,8,16,12">
                             <TextBlock Text="行为" FontSize="23" FontWeight="Light"/>
                             <CheckBox x:Name="DoAutoStartCheckbox" Content="开机自启动" Margin="8,10,0,0"/>
+                            <Grid Margin="8,12,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="190"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="130"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Label Content="操作内核" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="Combobox3" Grid.Column="1" Style="{DynamicResource comboboxStyle}" Width="160" Margin="8,3" IsTextSearchEnabled="False">
+                                    <ComboBoxItem Content="自动（优先原生）"/>
+                                    <ComboBoxItem Content="原生内核 (C++)"/>
+                                    <ComboBoxItem Content="兼容内核 (.NET)"/>
+                                </ComboBox>
+                                <Label Grid.Column="2" Content="连发发送键" VerticalAlignment="Center" Margin="28,0,0,0"/>
+                                <ComboBox x:Name="Combobox4" Grid.Column="3" Style="{DynamicResource comboboxStyle}" Width="120" Margin="8,3" IsTextSearchEnabled="False">
+                                    <ComboBoxItem Content="Enter"/>
+                                    <ComboBoxItem Content="Shift+Enter"/>
+                                </ComboBox>
+                                <Label Grid.Row="1" Content="连发发送方式" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="Combobox5" Grid.Row="1" Grid.Column="1" Style="{DynamicResource comboboxStyle}" Width="180" Margin="8,6" IsTextSearchEnabled="False">
+                                    <ComboBoxItem Content="快捷键"/>
+                                    <ComboBoxItem Content="点击发送按钮"/>
+                                    <ComboBoxItem Content="自动（先按钮后快捷键）"/>
+                                </ComboBox>
+                            </Grid>
 
                             <TextBlock Text="外观" FontSize="23" FontWeight="Light" Margin="0,22,0,8"/>
                             <Grid Margin="8,0,0,0">
@@ -306,19 +388,27 @@
                                 </Grid.RowDefinitions>
                                 <Label Content="终止任务" VerticalAlignment="Center"/>
                                 <TextBox x:Name="KeyTextbox3" Grid.Column="1" Text="Ctrl+G" InputMethod.IsInputMethodEnabled="False" Height="32" Margin="0,3" PreviewTextInput="TextBox_PreviewTextInput">
-                                    <TextBox.CommandBindings><CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"/></TextBox.CommandBindings>
+                                    <TextBox.CommandBindings>
+                                        <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"/>
+                                    </TextBox.CommandBindings>
                                 </TextBox>
                                 <Label Grid.Row="1" Content="连点开关" VerticalAlignment="Center"/>
                                 <TextBox x:Name="KeyTextbox4" Grid.Row="1" Grid.Column="1" InputMethod.IsInputMethodEnabled="False" Height="32" Margin="0,3" PreviewTextInput="TextBox_PreviewTextInput">
-                                    <TextBox.CommandBindings><CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"/></TextBox.CommandBindings>
+                                    <TextBox.CommandBindings>
+                                        <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"/>
+                                    </TextBox.CommandBindings>
                                 </TextBox>
                                 <Label Grid.Row="2" Content="连发开关" VerticalAlignment="Center"/>
                                 <TextBox x:Name="KeyTextbox5" Grid.Row="2" Grid.Column="1" InputMethod.IsInputMethodEnabled="False" Height="32" Margin="0,3" PreviewTextInput="TextBox_PreviewTextInput">
-                                    <TextBox.CommandBindings><CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"/></TextBox.CommandBindings>
+                                    <TextBox.CommandBindings>
+                                        <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"/>
+                                    </TextBox.CommandBindings>
                                 </TextBox>
                                 <Label Grid.Row="3" Content="显示/隐藏主界面" VerticalAlignment="Center"/>
                                 <TextBox x:Name="KeyTextbox6" Grid.Row="3" Grid.Column="1" InputMethod.IsInputMethodEnabled="False" Height="32" Margin="0,3" PreviewTextInput="TextBox_PreviewTextInput">
-                                    <TextBox.CommandBindings><CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"/></TextBox.CommandBindings>
+                                    <TextBox.CommandBindings>
+                                        <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"/>
+                                    </TextBox.CommandBindings>
                                 </TextBox>
                             </Grid>
                             <TextBlock Text="注：所有快捷键有关的设置需重启程序后生效。" Margin="8,8,0,0"/>
@@ -380,6 +470,6 @@
         <ToggleButton x:Name="pinButton" Style="{DynamicResource topmostButtonStyle}"
                       FontFamily="{DynamicResource iconFont}" FontSize="18" Content="{DynamicResource Icon.Pin}"
                       HorizontalAlignment="Right" VerticalAlignment="Top" Height="36" Width="43"
-                      Margin="0,-4,6,0" Click="ToggleButton_Click"/>
+                      Margin="0,-2,0,0" Click="ToggleButton_Click"/>
     </Grid>
 </Window>

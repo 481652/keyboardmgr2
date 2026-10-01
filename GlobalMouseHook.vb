@@ -44,7 +44,7 @@ Public Class GlobalMouseHook
                 Dim hWnd As IntPtr = WindowFromPoint(p)
                 '检查句柄是否有效
                 If hWnd <> IntPtr.Zero Then
-                    RaiseEvent WindowSelected(hWnd)
+                    RaiseEvent WindowSelected(hWnd, hookStruct.pt.x, hookStruct.pt.y)
                     StopSelection()
                 End If
             End If
@@ -88,8 +88,8 @@ Public Class GlobalMouseHook
     Private Shared Function CallNextHookEx(hHook As IntPtr, nCode As Integer, wParam As IntPtr, lParam As IntPtr) As IntPtr
     End Function
 
-    '自定义事件用于传递选定的窗口句柄
-    Public Event WindowSelected(hWnd As IntPtr)
+    '自定义事件用于传递选定的窗口句柄与点击坐标
+    Public Event WindowSelected(hWnd As IntPtr, x As Integer, y As Integer)
 
     '停止选择的公共方法
     Public Sub StopSelection()

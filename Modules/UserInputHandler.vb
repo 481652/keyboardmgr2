@@ -1,6 +1,7 @@
 ﻿
 '键鼠操作相关功能。
 Imports System.Runtime.InteropServices
+Imports System.Windows.Automation
 
 
 
@@ -208,6 +209,324 @@ Module UserInputHandler
         inputList.Add(keyUp)
     End Sub
 
+    '连发“发送键”：Enter 或 Shift+Enter（Shift 按住期间发送 Enter）
+    Public Sub SendSendKey(useShiftEnter As Boolean)
+        If useShiftEnter Then
+            SendKey(VK_SHIFT, True)
+            Try
+                SendEnterKey()
+            Finally
+                SendKey(VK_SHIFT, False)
+            End Try
+        Else
+            SendEnterKey()
+        End If
+    End Sub
+
+    Private Const VK_SHIFT As Byte = &H10
+
+#End Region
+
+
+
+    '直接向目标文本框插入文本（连发文本条目用）：
+    '优先 UI Automation 直接写入，其次 WM_SETTEXT，最后回退 SendInput 逐字符模拟。
+    '指定 targetHwnd 时以该窗口内的控件为准（不依赖前台焦点），否则使用当前前台/焦点控件。
+#Region "DirectTextInsert"
+
+    Public Function InsertTextToTarget(text As String, Optional targetHwnd As IntPtr = Nothing, Optional inputPointX As Integer = Integer.MinValue, Optional inputPointY As Integer = Integer.MinValue) As Boolean
+        If String.IsNullOrEmpty(text) Then Return True
+
+        If targetHwnd <> IntPtr.Zero Then
+            '0. 用户点选过输入框位置：直接点击该位置后模拟键盘输入（最可靠）
+            If inputPointX <> Integer.MinValue AndAlso TryClickPointAndType(text, targetHwnd, inputPointX, inputPointY) Then Return True
+            '1. UI Automation：目标窗口内定位编辑控件并直接写入
+            If TrySetTextViaUia(text, targetHwnd) Then Return True
+            '2. WM_SETTEXT：向目标窗口线程的焦点控件直接设置文本
+            If TrySetTextViaWmSettext(text, targetHwnd) Then Return True
+            '3. 点击定位：找到可能的输入框，点击获得焦点后模拟键盘输入（兼容不支持 UIA 写入的应用）
+            If TryClickAndType(text, targetHwnd) Then Return True
+            '4. 回退：操作内核模拟键盘输入（依赖目标已激活且已有焦点）
+            Return OpEngine.TypeText(text)
+        End If
+
+        '未指定目标窗口：沿用全局焦点控件
+        If TrySetTextViaUia(text, IntPtr.Zero) Then Return True
+        If TrySetTextViaWmSettext(text, IntPtr.Zero) Then Return True
+        Return OpEngine.TypeText(text)
+    End Function
+
+    '按用户点选的窗口内相对坐标点击并输入文本
+    Private Function TryClickPointAndType(text As String, targetHwnd As IntPtr, relX As Integer, relY As Integer) As Boolean
+        Try
+            Dim rect As RECTAPI
+            If Not GetWindowRectApi(targetHwnd, rect) Then Return False
+            Dim ax As Integer = rect.Left + relX
+            Dim ay As Integer = rect.Top + relY
+            If Not OpEngine.MouseClick(1, ax, ay) Then Return False
+            Threading.Thread.Sleep(80)
+            Return OpEngine.TypeText(text)
+        Catch
+            Return False
+        End Try
+    End Function
+
+    Private Function TrySetTextViaUia(text As String, targetHwnd As IntPtr) As Boolean
+        Try
+            If targetHwnd <> IntPtr.Zero Then
+                Dim window As AutomationElement = AutomationElement.FromHandle(targetHwnd)
+                If window Is Nothing Then Return False
+                '优先目标窗口内的焦点控件，其次在窗口子树中查找最可能是输入框的控件
+                Dim focusHwnd As IntPtr = GetFocusedControlHwnd(targetHwnd)
+                If focusHwnd <> IntPtr.Zero Then
+                    Dim focused As AutomationElement = AutomationElement.FromHandle(focusHwnd)
+                    If focused IsNot Nothing AndAlso TrySetElementValue(focused, text) Then Return True
+                End If
+                Dim candidate As AutomationElement = FindInputElement(window)
+                If candidate Is Nothing Then Return False
+                Return TrySetElementValue(candidate, text)
+            End If
+
+            Dim focusedGlobal As AutomationElement = AutomationElement.FocusedElement
+            If focusedGlobal Is Nothing Then Return False
+            If TrySetElementValue(focusedGlobal, text) Then Return True
+            Dim conditionGlobal As New PropertyCondition(AutomationElement.IsValuePatternAvailableProperty, True)
+            Dim candidateGlobal As AutomationElement = focusedGlobal.FindFirst(TreeScope.Element Or TreeScope.Subtree, conditionGlobal)
+            If candidateGlobal Is Nothing Then Return False
+            Return TrySetElementValue(candidateGlobal, text)
+        Catch
+            Return False
+        End Try
+    End Function
+
+    '在窗口子树中找出最可能是“主输入框”的控件：
+    '候选为 Edit/Document 控件或支持 ValuePattern 的控件，
+    '按 可聚焦/可写值/控件类型/多行高度/靠窗口底部/面积 加权评分，避免选中顶部搜索框。
+    Private Function FindInputElement(window As AutomationElement) As AutomationElement
+        Try
+            Dim orCondition As New OrCondition(
+                New PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit),
+                New PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Document),
+                New PropertyCondition(AutomationElement.IsValuePatternAvailableProperty, True))
+            Dim elements As AutomationElementCollection = window.FindAll(TreeScope.Subtree, orCondition)
+            If elements Is Nothing OrElse elements.Count = 0 Then Return Nothing
+            Dim winRect As System.Windows.Rect = Nothing
+            Try
+                winRect = window.Current.BoundingRectangle
+            Catch
+            End Try
+            Dim best As AutomationElement = Nothing
+            Dim bestScore As Double = -1
+            For Each el As AutomationElement In elements
+                Try
+                    Dim cur As AutomationElement.AutomationElementInformation = el.Current
+                    If Not cur.IsEnabled OrElse cur.IsOffscreen Then Continue For
+                    Dim rect As System.Windows.Rect = cur.BoundingRectangle
+                    If rect.IsEmpty OrElse rect.Width < 30 OrElse rect.Height < 15 Then Continue For
+                    Dim hasWritableValue As Boolean = False
+                    Dim vp As Object = Nothing
+                    If el.TryGetCurrentPattern(ValuePattern.Pattern, vp) AndAlso vp IsNot Nothing Then
+                        Dim valuePattern As ValuePattern = CType(vp, ValuePattern)
+                        hasWritableValue = Not valuePattern.Current.IsReadOnly
+                    End If
+                    Dim score As Double = rect.Width * rect.Height
+                    If cur.IsKeyboardFocusable Then score *= 10
+                    If cur.ControlType Is ControlType.Edit Then score *= 30
+                    If cur.ControlType Is ControlType.Document Then score *= 15
+                    If hasWritableValue Then score *= 20
+                    '多行输入框加权；窄而矮的控件大概率是搜索框，降权
+                    If rect.Height >= 60 Then score *= 5
+                    If rect.Height <= 45 AndAlso rect.Width < 400 Then score *= 0.15
+                    '主输入框通常在窗口下部：越靠底部越优先，顶部降权
+                    If Not winRect.IsEmpty AndAlso winRect.Height > 0 Then
+                        Dim bottomRatio As Double = (rect.Bottom - winRect.Top) / winRect.Height
+                        If bottomRatio > 0.55 Then
+                            score *= 8
+                        ElseIf bottomRatio < 0.2 Then
+                            score *= 0.5
+                        End If
+                    End If
+                    If score > bestScore Then
+                        bestScore = score
+                        best = el
+                    End If
+                Catch
+                End Try
+            Next
+            Return best
+        Catch
+            Return Nothing
+        End Try
+    End Function
+
+    '点击输入框中心获得焦点，再用操作内核模拟键盘输入（适用于不支持 UIA 写入的应用）
+    Private Function TryClickAndType(text As String, targetHwnd As IntPtr) As Boolean
+        Try
+            Dim window As AutomationElement = AutomationElement.FromHandle(targetHwnd)
+            If window Is Nothing Then Return False
+            Dim inputElement As AutomationElement = FindInputElement(window)
+            If inputElement Is Nothing Then Return False
+            Dim rect As System.Windows.Rect = inputElement.Current.BoundingRectangle
+            If rect.IsEmpty OrElse rect.Width < 10 OrElse rect.Height < 10 Then Return False
+            Dim cx As Integer = CInt(rect.X + rect.Width / 2)
+            Dim cy As Integer = CInt(rect.Y + rect.Height / 2)
+            If Not OpEngine.MouseClick(1, cx, cy) Then Return False
+            Threading.Thread.Sleep(80)
+            Return OpEngine.TypeText(text)
+        Catch
+            Return False
+        End Try
+    End Function
+
+    Private Function TrySetElementValue(element As AutomationElement, text As String) As Boolean
+        Try
+            Dim pattern As Object = Nothing
+            If element.TryGetCurrentPattern(ValuePattern.Pattern, pattern) AndAlso pattern IsNot Nothing Then
+                Dim valuePattern As ValuePattern = CType(pattern, ValuePattern)
+                If Not valuePattern.Current.IsReadOnly Then
+                    valuePattern.SetValue(text)
+                    '把焦点切到该控件，保证后续按 Enter 等发送键生效
+                    Try
+                        element.SetFocus()
+                    Catch
+                    End Try
+                    Return True
+                End If
+            End If
+        Catch
+        End Try
+        Return False
+    End Function
+
+    Private Function TrySetTextViaWmSettext(text As String, targetHwnd As IntPtr) As Boolean
+        Try
+            Dim hwndFocus As IntPtr
+            If targetHwnd <> IntPtr.Zero Then
+                hwndFocus = GetFocusedControlHwnd(targetHwnd)
+            Else
+                hwndFocus = GetForegroundFocusedControl()
+            End If
+            If hwndFocus = IntPtr.Zero Then Return False
+            SendMessageText(hwndFocus, WM_SETTEXT, IntPtr.Zero, text)
+            Return True
+        Catch
+            Return False
+        End Try
+    End Function
+
+    '获取指定窗口所在线程的焦点控件句柄
+    Private Function GetFocusedControlHwnd(hwnd As IntPtr) As IntPtr
+        Try
+            If hwnd = IntPtr.Zero Then Return IntPtr.Zero
+            Dim processId As UInteger = 0
+            Dim threadId As UInteger = GetWindowThreadProcessIdApi(hwnd, processId)
+            If threadId = 0 Then Return IntPtr.Zero
+            Dim info As New GUITHREADINFO
+            info.cbSize = Marshal.SizeOf(GetType(GUITHREADINFO))
+            If GetGUIThreadInfo(threadId, info) Then Return info.hwndFocus
+            Return IntPtr.Zero
+        Catch
+            Return IntPtr.Zero
+        End Try
+    End Function
+
+    Private Function GetForegroundFocusedControl() As IntPtr
+        Try
+            Return GetFocusedControlHwnd(GetForegroundWindowApi())
+        Catch
+            Return IntPtr.Zero
+        End Try
+    End Function
+
+    Private Const WM_SETTEXT As Integer = &HC
+
+    <StructLayout(LayoutKind.Sequential)>
+    Private Structure RECTAPI
+        Public Left As Integer
+        Public Top As Integer
+        Public Right As Integer
+        Public Bottom As Integer
+    End Structure
+
+    <StructLayout(LayoutKind.Sequential)>
+    Private Structure GUITHREADINFO
+        Public cbSize As Integer
+        Public flags As Integer
+        Public hwndActive As IntPtr
+        Public hwndFocus As IntPtr
+        Public hwndCapture As IntPtr
+        Public hwndMenuOwner As IntPtr
+        Public hwndMoveSize As IntPtr
+        Public hwndCaret As IntPtr
+        Public rcCaret As RECTAPI
+    End Structure
+
+    <DllImport("user32.dll")>
+    Private Function GetGUIThreadInfo(idThread As UInteger, ByRef pgui As GUITHREADINFO) As Boolean
+    End Function
+
+    <DllImport("user32.dll", EntryPoint:="GetForegroundWindow")>
+    Private Function GetForegroundWindowApi() As IntPtr
+    End Function
+
+    <DllImport("user32.dll", EntryPoint:="GetWindowThreadProcessId")>
+    Private Function GetWindowThreadProcessIdApi(hWnd As IntPtr, ByRef lpdwProcessId As UInteger) As UInteger
+    End Function
+
+    <DllImport("user32.dll", EntryPoint:="SendMessageW", CharSet:=CharSet.Unicode)>
+    Private Function SendMessageText(hWnd As IntPtr, msg As Integer, wParam As IntPtr, lParam As String) As IntPtr
+    End Function
+
+    <DllImport("user32.dll", EntryPoint:="GetWindowRect")>
+    Private Function GetWindowRectApi(hWnd As IntPtr, ByRef lpRect As RECTAPI) As Boolean
+    End Function
+
+    '在目标窗口中查找常见名称的“发送”按钮并通过 UIA 调用（Invoke 优先，其次点击按钮中心）。
+    '找到并触发返回 True，否则返回 False。
+    Public Function TryInvokeSendButton(hWnd As IntPtr) As Boolean
+        If hWnd = IntPtr.Zero Then Return False
+        Try
+            Dim window As AutomationElement = AutomationElement.FromHandle(hWnd)
+            If window Is Nothing Then Return False
+            Dim condition As New PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)
+            Dim buttons As AutomationElementCollection = window.FindAll(TreeScope.Subtree, condition)
+            If buttons Is Nothing OrElse buttons.Count = 0 Then Return False
+            For Each button As AutomationElement In buttons
+                Dim name As String = ""
+                Try
+                    name = If(button.Current.Name, "")
+                Catch
+                End Try
+                If Not IsSendButtonName(name) Then Continue For
+                Dim pattern As Object = Nothing
+                If button.TryGetCurrentPattern(InvokePattern.Pattern, pattern) AndAlso pattern IsNot Nothing Then
+                    DirectCast(pattern, InvokePattern).Invoke()
+                    Return True
+                End If
+                Dim rect As System.Windows.Rect = Nothing
+                Try
+                    rect = button.Current.BoundingRectangle
+                Catch
+                End Try
+                If Not rect.IsEmpty AndAlso rect.Width > 0 AndAlso rect.Height > 0 Then
+                    OpEngine.MouseClick(1, CInt(rect.X + rect.Width / 2), CInt(rect.Y + rect.Height / 2))
+                    Return True
+                End If
+            Next
+        Catch
+        End Try
+        Return False
+    End Function
+
+    Private Function IsSendButtonName(name As String) As Boolean
+        If String.IsNullOrWhiteSpace(name) Then Return False
+        Dim keywords As String() = {"发送", "发送消息", "回复", "确定", "发表", "发布", "评论", "提交", "Send", "Submit", "Post"}
+        For Each keyword As String In keywords
+            If name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0 Then Return True
+        Next
+        Return False
+    End Function
+
 #End Region
 
 
@@ -306,6 +625,7 @@ Module UserInputHandler
     Private Const IDC_HAND As Integer = 32649
 
     Public Event WindowSelected(hWnd As IntPtr)
+    Public Event PointCaptured(x As Integer, y As Integer, hWnd As IntPtr)
 
     Private mouseHook As New GlobalMouseHook()
 
@@ -323,8 +643,9 @@ Module UserInputHandler
         SetCursor(IntPtr.Zero)
     End Sub
 
-    Private Sub MouseHook_WindowSelected(hWnd As IntPtr)
+    Private Sub MouseHook_WindowSelected(hWnd As IntPtr, x As Integer, y As Integer)
         RaiseEvent WindowSelected(hWnd)
+        RaiseEvent PointCaptured(x, y, hWnd)
     End Sub
 #End Region
 

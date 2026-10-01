@@ -98,6 +98,8 @@
     <Reference Include="System.Xaml">
       <RequiredTargetFramework>4.0</RequiredTargetFramework>
     </Reference>
+    <Reference Include="UIAutomationClient" />
+    <Reference Include="UIAutomationTypes" />
     <Reference Include="WindowsBase" />
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
@@ -115,6 +117,9 @@
     <Compile Include="HelpWindow.xaml.vb">
       <DependentUpon>HelpWindow.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Modules\OpCoreManaged.vb" />
+    <Compile Include="Modules\OpCoreNative.vb" />
+    <Compile Include="Modules\OpEngine.vb" />
     <Compile Include="Modules\DlgModule.vb" />
     <Compile Include="Modules\LoafModule.vb" />
     <Compile Include="Modules\SettingsModule.vb" />
