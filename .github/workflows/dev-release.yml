@@ -96,13 +96,32 @@ jobs:
           $version = "${{ steps.version.outputs.version }}"
           $tag = "v$version"
           $zip = "${{ steps.package.outputs.zip }}"
+          $repo = "${{ github.repository }}"
+          $commit = "${{ github.sha }}"
 
           # 重跑工作流时先清理同名 Release/Tag，保证可重复执行
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) { gh release delete $tag --yes --cleanup-tag }
 
+          # 调用官方接口生成更新日志，再本地化为中文格式
+          $lines = @(gh api "repos/$repo/releases/generate-notes" -f tag_name=$tag -f target_commitish=$commit --jq .body)
+          $lines = $lines -replace "`r$", ""
+          $body = ($lines -join "`n").Trim()
+          if ([string]::IsNullOrWhiteSpace($body)) { $body = "本次提交没有可列出的变更。" }
+
+          $body = $body -replace '(?m)^## What''s Changed$', '### 更新日志'
+          $body = $body -replace '(?m)^## New Contributors$', '### 新贡献者'
+          $body = $body -replace '(?m)^\* (.+) by (@\S+) in (\S+)$', '* $1 （$2 于 $3 更改）'
+          $body = $body -replace '(?m)^\* (@\S+) made their first contribution in (\S+)$', '* $1 首次贡献于 $2'
+          $body = $body -replace '\*\*Full Changelog\*\*: (\S+)', '**浏览完整更新**: $1'
+
+          $header = "> [!IMPORTANT]`n> 此为开发中的版本，由GitHub Action自动构建，仅供开发人员测试。如要使用键鼠管家，请下载**正式版**。`n`n"
+
+          $notesPath = Join-Path $PWD "release-notes.md"
+          [System.IO.File]::WriteAllText($notesPath, $header + $body, (New-Object System.Text.UTF8Encoding($false)))
+
           gh release create $tag $zip `
             --title $tag `
-            --target "${{ github.sha }}" `
+            --target $commit `
             --prerelease `
-            --generate-notes
+            --notes-file $notesPath
