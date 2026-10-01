@@ -1,0 +1,108 @@
+name: Dev Build & Release
+
+# 每次推送到 dev 分支自动编译并发布 Release
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dev-release
+  cancel-in-progress: false
+
+env:
+  SOLUTION: keyboardmgr2\keyboardmgr2.sln
+  CONFIGURATION: Release
+  # 项目 vcxproj 默认工具集为 v145(VS2026)，CI 上固定为 v143(VS2022) 以保证可复现
+  PLATFORM_TOOLSET: v143
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        run: nuget restore "$env:SOLUTION"
+
+      - name: Compute version
+        id: version
+        shell: pwsh
+        run: |
+          $assemblyInfo = "keyboardmgr2\My Project\AssemblyInfo.vb"
+          $content = [System.IO.File]::ReadAllText((Resolve-Path $assemblyInfo))
+          $match = [regex]::Match($content, 'AssemblyVersion\("(\d+)\.(\d+)\.(\d+)\.\d+"\)')
+          if (-not $match.Success) { throw "无法从 AssemblyInfo.vb 解析版本号" }
+          # 前三段沿用源码版本，第四段使用自增的构建号，保证每次提交都更高
+          $version = "{0}.{1}.{2}.{3}" -f $match.Groups[1].Value, $match.Groups[2].Value, $match.Groups[3].Value, "${{ github.run_number }}"
+          Write-Host "发布版本: $version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Apply version to AssemblyInfo
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $assemblyInfo = Resolve-Path "keyboardmgr2\My Project\AssemblyInfo.vb"
+          $content = [System.IO.File]::ReadAllText($assemblyInfo)
+          $content = $content -replace 'AssemblyVersion\("\d+\.\d+\.\d+\.\d+"\)', "AssemblyVersion(`"$version`")"
+          $content = $content -replace 'AssemblyFileVersion\("\d+\.\d+\.\d+\.\d+"\)', "AssemblyFileVersion(`"$version`")"
+          # 保留原来的 UTF-8 BOM，避免中文资源字符串被破坏
+          [System.IO.File]::WriteAllText($assemblyInfo, $content, (New-Object System.Text.UTF8Encoding($true)))
+
+      - name: Build (Release)
+        shell: pwsh
+        run: |
+          msbuild "$env:SOLUTION" /t:Rebuild /p:Configuration="$env:CONFIGURATION" /p:Platform="Any CPU" /p:PlatformToolset="$env:PLATFORM_TOOLSET" /m /v:minimal
+
+      - name: Package release archive
+        id: package
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $outputDir = "keyboardmgr2\bin\Release"
+          if (-not (Test-Path -LiteralPath $outputDir)) { throw "未找到构建输出目录: $outputDir" }
+
+          # 更新模块要求压缩包内“有且仅有一个 EXE”，即主程序 keyboardmgr2.exe
+          $exes = @(Get-ChildItem -LiteralPath $outputDir -Filter *.exe -Recurse -File)
+          if ($exes.Count -ne 1 -or $exes[0].BaseName -ne "keyboardmgr2") {
+            throw "构建输出中的 EXE 数量/名称不符合更新模块要求: $($exes.Name -join ', ')"
+          }
+
+          $zipName = "keyboardmgr2-$version.zip"
+          if (Test-Path -LiteralPath $zipName) { Remove-Item -LiteralPath $zipName -Force }
+          Compress-Archive -Path (Join-Path $outputDir '*') -DestinationPath $zipName -CompressionLevel Optimal
+          Write-Host "已生成 $zipName ($([math]::Round((Get-Item $zipName).Length / 1MB, 2)) MB)"
+          "zip=$zipName" >> $env:GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $tag = "v$version"
+          $zip = "${{ steps.package.outputs.zip }}"
+
+          # 重跑工作流时先清理同名 Release/Tag，保证可重复执行
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) { gh release delete $tag --yes --cleanup-tag }
+
+          gh release create $tag $zip `
+            --title $tag `
+            --target "${{ github.sha }}" `
+            --prerelease `
+            --generate-notes
