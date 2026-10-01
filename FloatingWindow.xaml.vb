@@ -344,10 +344,10 @@ Public Class FloatingWindow
     Private Sub CancelFoldTimer()
         foldDelayTimer?.Dispose()
         foldDelayTimer = Nothing
-        animationVersion += 1
-        Dim currentTop As Double = Top
-        BeginAnimation(TopProperty, Nothing)
-        Top = currentTop
+        'animationVersion += 1
+        'Dim currentTop As Double = Top
+        'BeginAnimation(TopProperty, Nothing)
+        'Top = currentTop
     End Sub
 
     Private Sub ScheduleFold()
@@ -358,15 +358,16 @@ Public Class FloatingWindow
                 If floatingHwnd = IntPtr.Zero OrElse IsPointerOverWindow() Then Return
                 Dim rect As NativeRect
                 If GetWindowRect(floatingHwnd, rect) Then
-                    Dim foldedY As Integer = -(rect.Bottom - rect.Top) + 8
-                    SetWindowPos(floatingHwnd, IntPtr.Zero, rect.Left, foldedY, 0, 0, SWP_NOSIZE Or SWP_NOZORDER Or SWP_NOACTIVATE)
+                    'Dim foldedY As Integer = -(rect.Bottom - rect.Top) + 8
+                    'SetWindowPos(floatingHwnd, IntPtr.Zero, rect.Left, foldedY, 0, 0, SWP_NOSIZE Or SWP_NOZORDER Or SWP_NOACTIVATE)
                     foldTargeted = True
                     Dispatcher.BeginInvoke(New Action(
                         Sub()
-                            animationVersion += 1
-                            BeginAnimation(TopProperty, Nothing)
-                            Top = FoldedTop
-                            isFloatingWindowFolded = True
+                            'animationVersion += 1
+                            'BeginAnimation(TopProperty, Nothing)
+                            'Top = FoldedTop
+                            'isFloatingWindowFolded = True
+                            MoveTo(-40, True)
                         End Sub))
                 End If
             End Sub, Nothing, TimeSpan.FromSeconds(3), Threading.Timeout.InfiniteTimeSpan)
@@ -386,18 +387,10 @@ Public Class FloatingWindow
             Return
         End If
 
-        Dim rect As NativeRect
-        If GetWindowRect(floatingHwnd, rect) AndAlso rect.Top < 0 Then
-            SetWindowPos(floatingHwnd, IntPtr.Zero, rect.Left, 0, 0, 0, SWP_NOSIZE Or SWP_NOZORDER Or SWP_NOACTIVATE)
-        End If
         Dispatcher.BeginInvoke(New Action(
             Sub()
                 If FloatingWindowState = 2 Then
-                    animationVersion += 1
-                    BeginAnimation(TopProperty, Nothing)
-                    Top = 0
-                    foldTargeted = False
-                    isFloatingWindowFolded = False
+                    MoveTo(0, False)
                 End If
             End Sub))
     End Sub
@@ -412,7 +405,6 @@ Public Class FloatingWindow
     Private Sub Window_MouseEnter(sender As Object, e As Input.MouseEventArgs)
         If FloatingWindowState = 2 Then
             CancelFoldTimer()
-            MoveTo(0, False)
         End If
     End Sub
 
