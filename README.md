@@ -3,7 +3,9 @@
 键盘鼠标自动化工具，提供连点、连发、摸鱼(Boss Key)等功能。
 
 <div align="center">
-  #### ![下载旧版（Win 10 1809以下用户）](https://github.com/481652/keyboardmgrclassic) | ![访问项目官网](https://kbm.lcs123.top/) | ![项目讨论帖](https://sysbbs.cn/d/512)
+  
+**[下载旧版（Win 10 1809以下用户）](https://github.com/481652/keyboardmgrclassic)** | **[访问项目官网](https://kbm.lcs123.top/)** | **[项目讨论帖](https://sysbbs.cn/d/512)**
+
 </div>
 
 ## 功能特性
