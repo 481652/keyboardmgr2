@@ -1,6 +1,46 @@
-# keyboardmgr2
+# 键鼠管家 KeyboardManager
 
 键盘鼠标自动化工具，提供连点、连发、摸鱼(Boss Key)等功能。
+
+<div align="center">
+  #### ![下载旧版（Win 10 1809以下用户）](https://github.com/481652/keyboardmgrclassic) | ![访问项目官网](https://kbm.lcs123.top/) | ![项目讨论帖](https://sysbbs.cn/d/512)
+</div>
+
+## 功能特性
+
+### 连点
+ - 鼠标左右键与键盘单键的连续点击。
+ - 点击间隔支持随机偏移
+ - 鼠标点击位置可在屏幕内随机漂移
+ - 支持模拟长按
+
+### 连发
+ - 文字与图片的列表式连发。
+ - 每条内容发送后自动回车换行
+ - 列表可保存为 .lcslst2 文件并重新加载
+
+### 摸鱼
+ - 用全局热键管理窗口。
+ - 一键最小化其余窗口，仅保留选定窗口置顶（全局老板键）
+ - 再次按键恢复全部窗口
+
+## 开发中的功能
+> [!TIP]
+> 尚处于开发的功能，不保证将来功能实现与此处描述完全相符。
+> 加*的项目尚处于设想阶段，未考虑其可行性，可能不会加入程序中。
+
+### 悬浮窗信息显示
+ - 在悬浮窗显示您键盘鼠标的一些信息，如光标坐标、光标移速、光标移动距离和键盘按键数等。
+ - 可根据选择开启显示项
+
+### 录制
+ - 录制键鼠操作。
+
+### 脚本
+ - 使用powershell脚本来实现对键鼠自动化。
+ - 提供丰富的操作接口
+ - *可视化编辑器，用于快捷地编写脚本
+
 
 ## 构建环境
 
@@ -35,39 +75,6 @@ MSBuild.exe keyboardmgr2.sln /t:Rebuild /p:Configuration=Release /v:minimal
 - **Windows 10 1809 (Build 17763) 或更高版本**
 - Mica 云母效果需要 Win11 22H2 (Build 22621+)，低于此版本自动降级
 - x86/x64 均支持
-
-## 主要功能
-
-1. **连点** — 左键、右键、或自定义键盘按键的自动连续点击，支持随机速度偏移和坐标偏移
-2. **连发** — 批量文本短语连续发送（多条目、循环开关），可保存/加载预设
-3. **摸鱼(Boss Key)** — 一键最小化所有非工作窗口、将指定工作窗口前置；再按恢复
-4. **悬浮窗** — 屏幕顶部悬浮控制栏，支持始终显示/始终隐藏/自动收缩三种模式
-5. **全局热键** — 终止任务(9000)、摸鱼(9001)、连点开关(9002)、连发开关(9003)，支持自定义组合键
-6. **深浅色主题** — 自动跟随系统或手动选择，支持 Mica 云母效果
-7. **托盘图标** — 右键菜单直达各功能，左键显示主窗体
-
-## 工程结构
-
-```
-keyboardmgr2/
-  Application.xaml(.vb)     — 应用程序入口
-  MainWindow.xaml(.vb)      — 主设置窗体
-  FloatingWindow.xaml(.vb)  — 悬浮窗 + 全局热键注册/处理
-  expWindow(.vb)            — 异常信息对话框
-  HelpWindow(.vb)           — 帮助弹窗
-  MyMsgbox(.vb)             — 自定义消息框
-  MyTrayicon.vb             — 托盘图标
-  GlobalMouseHook.vb        — 全局鼠标钩子（窗体选取用）
-  Modules/
-    DlgModule.vb            — 对话框 + 全局状态变量
-    LoafModule.vb           — 摸鱼模式（窗口最小化/恢复）
-    SettingsModule.vb       — 注册表读写
-    ThemeModule.vb          — 主题切换 + Mica
-    UserInputHandler.vb     — 键盘输入、按键发送、鼠标操作
-WindowSelector/
-  Selector.vb               — 枚举可见窗口
-  WindowSelectorDlg(.vb)    — WinForms 窗口选取对话框
-```
 
 ## 设置存储位置
 
