@@ -37,8 +37,24 @@ Class Application
         End Try
         Dim userId As String = WindowsIdentity.GetCurrent().User.Value
         pipeName = "keyboardmgr2.singleinstance." & userId
+        Dim mutexName As String = "Local\keyboardmgr2.singleinstance." & userId
+        '提权重启的新实例带着 --elevated 标记：旧实例正在退出，它应当接管而不是被当成“第二实例”
+        Dim isElevatedRelaunch As Boolean = HasCommandLineArgument(LaunchOnSetupModule.ElevatedArgument)
+        LaunchOnSetupModule.PendingTaskAction = GetTaskActionArgument()
+
         Dim createdNew As Boolean
-        instanceMutex = New Mutex(True, "Local\keyboardmgr2.singleinstance." & userId, createdNew)
+        instanceMutex = New Mutex(True, mutexName, createdNew)
+
+        If Not createdNew AndAlso isElevatedRelaunch Then
+            '等待旧实例让出单实例权（最多 15 秒），否则新实例会立刻退出，看起来像“启动失败”
+            Dim deadline As DateTime = DateTime.UtcNow.AddSeconds(15)
+            While Not createdNew AndAlso DateTime.UtcNow < deadline
+                Thread.Sleep(150)
+                instanceMutex.Dispose()
+                instanceMutex = New Mutex(True, mutexName, createdNew)
+            End While
+        End If
+
         isPrimaryInstance = createdNew
 
         Dim requestedFile As String = GetRequestedListFile()
@@ -55,7 +71,18 @@ Class Application
         SwitchTheme(If(useSystemTheme, IsDarkModeEnabled(), ReadSetting("IsDarkMode", 0) = 1))
         Dim window As New MainWindow1()
         MainWindow = window
-        If isAutoStart AndAlso requestedFile Is Nothing Then
+        '开机自启要“静默进托盘”：Show() 是为了创建 HWND、消息钩子和托盘图标，
+        '但它期间会触发 Window_Loaded（读设置、注册热键等），窗口只要可见就会白屏闪一下
+        '（云母背景由 DWM 绘制，WPF 的 Opacity=0 挡不住它）。这里先把窗口挪到屏幕外，隐藏后再挪回来。
+        Dim hideAfterShow As Boolean = isAutoStart AndAlso requestedFile Is Nothing
+        Dim savedStartupLocation As WindowStartupLocation = window.WindowStartupLocation
+        Dim savedShowInTaskbar As Boolean = window.ShowInTaskbar
+        Dim savedShowActivated As Boolean = window.ShowActivated
+        If hideAfterShow Then
+            window.WindowStartupLocation = WindowStartupLocation.Manual
+            window.Left = -32000
+            window.Top = -32000
+            window.ShowInTaskbar = False
             window.ShowActivated = False
             window.Opacity = 0
         End If
@@ -63,11 +90,21 @@ Class Application
         StartPipeServer()
         If requestedFile IsNot Nothing Then
             window.HandleExternalRequest(requestedFile)
-        ElseIf isAutoStart Then
+        ElseIf hideAfterShow Then
             window.Hide()
             window.Opacity = 1
-            window.ShowActivated = True
+            window.ShowActivated = savedShowActivated
+            window.ShowInTaskbar = savedShowInTaskbar
+            window.WindowStartupLocation = savedStartupLocation
+            If savedStartupLocation <> WindowStartupLocation.Manual Then
+                '本来就是 CenterScreen：显式算好居中位置，免得下次从托盘显示时窗口还在屏幕外
+                window.Left = SystemParameters.WorkArea.Left + Math.Max(0, (SystemParameters.WorkArea.Width - window.ActualWidth) / 2)
+                window.Top = SystemParameters.WorkArea.Top + Math.Max(0, (SystemParameters.WorkArea.Height - window.ActualHeight) / 2)
+            End If
         End If
+
+        '主界面就绪后再执行提权重启时请求的任务操作（注册/删除开机自启任务）
+        RunPendingTaskAction()
     End Sub
 
     Private Sub Application_Exit(sender As Object, e As ExitEventArgs)
@@ -78,6 +115,53 @@ Class Application
             End Try
         End If
         instanceMutex?.Dispose()
+    End Sub
+
+    ''' <summary>
+    ''' 提权重启前调用：释放并销毁单实例互斥体，让带 --elevated 的新实例能够成为主实例。
+    ''' </summary>
+    Public Shared Sub ReleaseSingleInstanceForRestart()
+        Dim app As Application = TryCast(Current, Application)
+        If app IsNot Nothing Then
+            app.ReleaseSingleInstance()
+        End If
+    End Sub
+
+    Private Sub ReleaseSingleInstance()
+        '置为非主实例会让命名管道服务循环一并结束
+        isPrimaryInstance = False
+        If instanceMutex IsNot Nothing Then
+            Try
+                instanceMutex.ReleaseMutex()
+            Catch
+            End Try
+            Try
+                instanceMutex.Dispose()
+            Catch
+            End Try
+            instanceMutex = Nothing
+        End If
+    End Sub
+
+    '解析命令行里的 --task=register / --task=delete
+    Private Function GetTaskActionArgument() As String
+        Dim prefix As String = LaunchOnSetupModule.TaskActionArgumentPrefix
+        For Each argument As String In Environment.GetCommandLineArgs().Skip(1)
+            If argument.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) Then
+                Return argument.Substring(prefix.Length).Trim().ToLowerInvariant()
+            End If
+        Next
+        Return Nothing
+    End Function
+
+    '执行提权重启时请求的任务操作：schtasks 需要管理员权限，必须在提权后的实例里做
+    Private Sub RunPendingTaskAction()
+        Select Case LaunchOnSetupModule.PendingTaskAction
+            Case "register"
+                LaunchOnSetupModule.RegisterTask()
+            Case "delete"
+                LaunchOnSetupModule.EraseTask()
+        End Select
     End Sub
 
     'UI 线程未处理异常：记录日志并弹窗提示，避免进程直接崩溃

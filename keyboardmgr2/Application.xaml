@@ -4,19 +4,19 @@
     xmlns:sys="clr-namespace:System;assembly=mscorlib"
     xmlns:local="clr-namespace:keyboardmgr2"
     Startup="Application_Startup" Exit="Application_Exit">
-    <Application.Resources>
-        <ResourceDictionary>
-            <sys:String x:Key="Icon.Pin">&#xE718;</sys:String>
-            <sys:String x:Key="Icon.Unpin">&#xE77A;</sys:String>
-            <sys:String x:Key="Icon.Copy">&#xE8C8;</sys:String>
-            <sys:String x:Key="Icon.Close">&#xE8BB;</sys:String>
-            <sys:String x:Key="Icon.Stop">&#xE71A;</sys:String>
-            <sys:String x:Key="Icon.Click">&#xE8B0;</sys:String>
-            <sys:String x:Key="Icon.Send">&#xE724;</sys:String>
-            <SolidColorBrush x:Key="TopmostButtonCheckedForeground" Color="White"/>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="resource/LightTheme.xaml"/>
-            </ResourceDictionary.MergedDictionaries>
-        </ResourceDictionary>
-    </Application.Resources>
+	<Application.Resources>
+		<ResourceDictionary>
+			<sys:String x:Key="Icon.Pin">&#xE718;</sys:String>
+			<sys:String x:Key="Icon.Unpin">&#xE77A;</sys:String>
+			<sys:String x:Key="Icon.Copy">&#xE8C8;</sys:String>
+			<sys:String x:Key="Icon.Close">&#xE8BB;</sys:String>
+			<sys:String x:Key="Icon.Stop">&#xE71A;</sys:String>
+			<sys:String x:Key="Icon.Click">&#xE8B0;</sys:String>
+			<sys:String x:Key="Icon.Send">&#xE724;</sys:String>
+			<SolidColorBrush x:Key="TopmostButtonCheckedForeground" Color="White"/>
+			<ResourceDictionary.MergedDictionaries>
+				<ResourceDictionary Source="resource/LightTheme.xaml"/>
+			</ResourceDictionary.MergedDictionaries>
+		</ResourceDictionary>
+	</Application.Resources>
 </Application>
