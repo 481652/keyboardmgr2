@@ -65,6 +65,10 @@ Public Class MyTrayicon
         AddHandler menuItem3.Click, AddressOf MenuOption3_Click
         Dim menuItem4 As New MenuItem() With {.Header = "摸鱼"}
         AddHandler menuItem4.Click, AddressOf MenuOption4_Click
+        Dim menuItemRecord As New MenuItem() With {.Header = "录制"}
+        AddHandler menuItemRecord.Click, AddressOf MenuOptionRecord_Click
+        Dim menuItemScript As New MenuItem() With {.Header = "脚本"}
+        AddHandler menuItemScript.Click, AddressOf MenuOptionScript_Click
         Dim menuItem5 As New MenuItem() With {.Header = "选项"}
         AddHandler menuItem5.Click, AddressOf MenuOption5_Click
         Dim menuItem6 As New MenuItem() With {.Header = "退出程序"}
@@ -73,6 +77,8 @@ Public Class MyTrayicon
         contextMenu.Items.Add(menuItem2)
         contextMenu.Items.Add(menuItem3)
         contextMenu.Items.Add(menuItem4)
+        contextMenu.Items.Add(menuItemRecord)
+        contextMenu.Items.Add(menuItemScript)
         contextMenu.Items.Add(menuItem5)
         contextMenu.Items.Add(menuItem6)
         '必须在添加菜单项之后再遍历应用样式，否则集合为空、样式不生效
@@ -124,7 +130,23 @@ Public Class MyTrayicon
             MainWindow1.Instance.Visibility = Visibility.Visible
         End If
         MainWindow1.Instance.Activate()
+        MainWindow1.Instance.TabControl1.SelectedIndex = 6
+    End Sub
+
+    Private Sub MenuOptionRecord_Click(sender As Object, e As RoutedEventArgs) '录制
+        If MainWindow1.Instance.Visibility = Visibility.Hidden Then
+            MainWindow1.Instance.Visibility = Visibility.Visible
+        End If
+        MainWindow1.Instance.Activate()
         MainWindow1.Instance.TabControl1.SelectedIndex = 4
+    End Sub
+
+    Private Sub MenuOptionScript_Click(sender As Object, e As RoutedEventArgs) '脚本
+        If MainWindow1.Instance.Visibility = Visibility.Hidden Then
+            MainWindow1.Instance.Visibility = Visibility.Visible
+        End If
+        MainWindow1.Instance.Activate()
+        MainWindow1.Instance.TabControl1.SelectedIndex = 5
     End Sub
 
     Private Sub MenuOption6_Click(sender As Object, e As RoutedEventArgs) '退出程序

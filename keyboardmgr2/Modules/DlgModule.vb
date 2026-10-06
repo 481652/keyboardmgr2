@@ -8,10 +8,11 @@ Module DlgModule
     '需要跨窗体使用的快捷键
     Public stopActHotkeys As New List(Of Byte)
     Public loafHotkeys As New List(Of Byte)
-    '热键 ID 9002-9004 对应连点、连发和主界面显示开关。
+    '热键 ID 9002-9005 对应连点、连发、主界面显示和录制开关。
     Public stopClickHotkeys As New List(Of Byte)
     Public rapidFireHotkeys As New List(Of Byte)
     Public toggleMainWindowHotkeys As New List(Of Byte)
+    Public recordHotkeys As New List(Of Byte)
 #Region "DialogsAndMessages"
     Public Sub ShowExpdlg(ex As String, text As String) 'ex为提示信息，text为异常内容（可空）
 

@@ -191,6 +191,8 @@ Public Class MainWindow1
         InitializeClickSettings()
         InitializeOpCoreSettings()
         InitializeHotkeySettings()
+        InitializeRecordSettings()
+        InitializeScriptSettings()
         UpdateItemDisplay()
         ApplyStartupTabSelection()
         If ReadSetting("DoAutoStart", 0) = 1 Then
@@ -408,6 +410,21 @@ Public Class MainWindow1
                 ShowMyMessage("无法加载主界面显示快捷键设置。")
             End If
         End If
+        '加载录制开关热键
+        Dim recordHotkeyStr As String = ReplaceReservedHotkey("RecordHotkeys", "Ctrl+F4", reservedHotkeyReplaced)
+        If recordHotkeyStr <> "" Then
+            KeyTextbox7.Text = recordHotkeyStr
+            Dim keyList = LoadKeyData(recordHotkeyStr)
+            recordHotkeys = ConvertKeyLogToVirtualKeyCodes(keyList)
+            If IsNoneKeyList(keyList) Then
+                ShowMyMessage("无法加载录制快捷键设置。")
+            End If
+        Else
+            recordHotkeyStr = "Ctrl+F4"
+            WriteSetting("RecordHotkeys", recordHotkeyStr)
+            KeyTextbox7.Text = recordHotkeyStr
+            recordHotkeys = ConvertKeyLogToVirtualKeyCodes(LoadKeyData(recordHotkeyStr))
+        End If
         If reservedHotkeyReplaced Then
             ShowMyMessage("检测到设置中包含系统常用快捷键，已自动恢复为对应的默认快捷键。")
         End If
@@ -433,6 +450,10 @@ Public Class MainWindow1
         End If
         If toggleMainWindowHotkeys.Count > 0 Then
             floatingWindow.RegisterGlobalHotkey(toggleMainWindowHotkeys, 9004)
+        End If
+        '注册录制开关热键
+        If recordHotkeys.Count > 0 Then
+            floatingWindow.RegisterGlobalHotkey(recordHotkeys, 9005)
         End If
     End Sub
 
@@ -473,12 +494,16 @@ Public Class MainWindow1
         AddHandler sendCompletionTimer.Tick, AddressOf SendCompletionTimer_Tick
         AddHandler imagePasteTimer.Tick, AddressOf ImagePasteTimer_Tick
         AddHandler SystemEvents.UserPreferenceChanged, AddressOf OnUserPreferenceChanged
+        AddHandler MacroPlayer.PlaybackStopped, AddressOf MacroPlayer_PlaybackStopped
+        AddHandler ScriptRunner.OutputReceived, AddressOf ScriptRunner_OutputReceived
+        AddHandler ScriptRunner.StateChanged, AddressOf ScriptRunner_StateChanged
         InitializeTextBoxKeyHandler(KeyTextbox1)
         InitializeTextBoxKeyHandler(KeyTextbox2)
         InitializeTextBoxKeyHandler(KeyTextbox3)
         InitializeTextBoxKeyHandler(KeyTextbox4)
         InitializeTextBoxKeyHandler(KeyTextbox5)
         InitializeTextBoxKeyHandler(KeyTextbox6)
+        InitializeTextBoxKeyHandler(KeyTextbox7)
         _instance = Me
     End Sub
 
@@ -568,6 +593,18 @@ Public Class MainWindow1
         If KeyTextbox6.Text <> "" Then
             WriteSetting("ToggleMainWindowHotkeys", KeyTextbox6.Text)
         End If
+        '保存录制开关热键
+        If KeyTextbox7.Text <> "" Then
+            WriteSetting("RecordHotkeys", KeyTextbox7.Text)
+        End If
+        '保存录制选项
+        Dim recordSampleRate As Integer
+        If Integer.TryParse(TxtRecordSampleRate.Text, recordSampleRate) AndAlso recordSampleRate >= 1 AndAlso recordSampleRate <= 1000 Then
+            WriteSetting("RecordSampleRateMs", recordSampleRate)
+        End If
+        WriteSetting("RecordPlaybackSmooth", If(ChkPlaybackSmooth.IsChecked, 1, 0))
+        WriteSetting("RecordPlaybackLoop", If(ChkPlaybackLoop.IsChecked, 1, 0))
+        WriteSetting("RecordPlaybackBlockInput", If(ChkPlaybackBlockInput.IsChecked, 1, 0))
         If StartupTabComboBox.SelectedIndex < 0 OrElse StartupTabComboBox.SelectedIndex >= TabControl1.Items.Count Then
             ShowMyMessage("无法保存设置：请选择程序启动时显示的选项卡。")
             Return
@@ -637,7 +674,8 @@ Public Class MainWindow1
             Tuple.Create("终止任务快捷键", KeyTextbox3.Text),
             Tuple.Create("连点开关快捷键", KeyTextbox4.Text),
             Tuple.Create("连发开关快捷键", KeyTextbox5.Text),
-            Tuple.Create("主界面显示/隐藏快捷键", KeyTextbox6.Text)
+            Tuple.Create("主界面显示/隐藏快捷键", KeyTextbox6.Text),
+            Tuple.Create("录制开关快捷键", KeyTextbox7.Text)
         }
         For Each hotkey In hotkeys
             If IsReservedSystemHotkey(hotkey.Item2) Then Return hotkey.Item1
@@ -1788,24 +1826,474 @@ Public Class MainWindow1
 #End Region
 
 #Region "Record"
-    '录制（开发中）
-    Private Const SAMPLING_RATE As Integer = 100
-    Public timer5 As New DispatcherTimer(DispatcherPriority.Normal)
+    '录制
+    Private recordings As New List(Of KbmrRecording)
+    Private currentRecordingIndex As Integer = -1
+
+    Private Sub InitializeRecordSettings()
+        Dim rate As Integer = 15
+        Integer.TryParse(ReadSetting("RecordSampleRateMs", 15).ToString(), rate)
+        If rate < 1 OrElse rate > 1000 Then rate = 15
+        TxtRecordSampleRate.Text = rate.ToString(Globalization.CultureInfo.InvariantCulture)
+        ChkPlaybackSmooth.IsChecked = ReadSetting("RecordPlaybackSmooth", 1) = 1
+        ChkPlaybackLoop.IsChecked = ReadSetting("RecordPlaybackLoop", 0) = 1
+        ChkPlaybackBlockInput.IsChecked = ReadSetting("RecordPlaybackBlockInput", 0) = 1
+        Combobox6.SelectedIndex = 1
+        UpdateRecordButtons()
+    End Sub
+
     '开始录制
     Private Sub Button_Click_6(sender As Object, e As RoutedEventArgs)
-        RecordList.Items.Add("未命名录制")
-        timer5.Interval = TimeSpan.FromMilliseconds(SAMPLING_RATE)
-        timer5.Start()
+        StartRecording()
+    End Sub
+
+    Public Sub StartRecording()
+        If InputRecorder.IsRecording Then Return
+        If MacroPlayer.IsPlaying Then MacroPlayer.StopPlayback()
+        If ScriptRunner.IsRunning Then
+            ShowMyMessage("脚本正在运行，请先停止脚本后再开始录制。")
+            Return
+        End If
+        Dim rate As Integer
+        If Not Integer.TryParse(TxtRecordSampleRate.Text, rate) OrElse rate < 1 OrElse rate > 1000 Then
+            ShowMyMessage("鼠标采样频率需为1到1000之间的整数（毫秒）。")
+            Return
+        End If
+        WriteSetting("RecordSampleRateMs", rate)
+        InputRecorder.StartRecording(rate)
+        RecordStatusLabel.Text = "正在录制……按""停止录制""或录制快捷键结束。"
+        UpdateRecordButtons()
     End Sub
 
     '停止录制
     Private Sub Button_Click_8(sender As Object, e As RoutedEventArgs)
+        StopRecordingAndSave()
+    End Sub
 
+    Public Sub StopRecordingAndSave()
+        If Not InputRecorder.IsRecording Then Return
+        Dim result As KbmrRecording = InputRecorder.StopRecording()
+        If result Is Nothing Then Return
+        result.Name = "录制 " & DateTime.Now.ToString("MM-dd HH:mm:ss")
+        recordings.Add(result)
+        currentRecordingIndex = recordings.Count - 1
+        RefreshRecordList()
+        RecordStatusLabel.Text = "录制完成：" & result.Events.Count & " 个事件，" & (result.DurationMs / 1000.0).ToString("0.0") & " 秒。"
+        UpdateRecordButtons()
+    End Sub
+
+    Public Sub ToggleRecording()
+        If InputRecorder.IsRecording Then
+            StopRecordingAndSave()
+        Else
+            StartRecording()
+        End If
     End Sub
 
     '删除录制
     Private Sub Button_Click_9(sender As Object, e As RoutedEventArgs)
+        If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then Return
+        recordings.RemoveAt(currentRecordingIndex)
+        If recordings.Count = 0 Then
+            currentRecordingIndex = -1
+        ElseIf currentRecordingIndex >= recordings.Count Then
+            currentRecordingIndex = recordings.Count - 1
+        End If
+        RefreshRecordList()
+        UpdateRecordButtons()
+    End Sub
 
+    Private Sub RefreshRecordList()
+        RecordList.Items.Clear()
+        For Each item As KbmrRecording In recordings
+            RecordList.Items.Add(item.Name)
+        Next
+        If currentRecordingIndex >= 0 AndAlso currentRecordingIndex < RecordList.Items.Count Then
+            RecordList.SelectedIndex = currentRecordingIndex
+        End If
+        UpdateRecordContent()
+    End Sub
+
+    Private Sub UpdateRecordContent()
+        If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then
+            RecordContent.Text = ""
+            Return
+        End If
+        Dim item As KbmrRecording = recordings(currentRecordingIndex)
+        Dim builder As New StringBuilder()
+        builder.AppendLine("名称：" & item.Name)
+        builder.AppendLine("事件数：" & item.Events.Count)
+        builder.AppendLine("时长：" & (item.DurationMs / 1000.0).ToString("0.000") & " 秒")
+        builder.AppendLine("鼠标采样频率：" & item.SampleIntervalMs & " ms")
+        builder.AppendLine("录制分辨率：" & item.ScreenWidth & " x " & item.ScreenHeight)
+        builder.AppendLine("录制时间：" & item.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"))
+        builder.AppendLine()
+        builder.AppendLine("事件预览：")
+        Dim previewCount As Integer = Math.Min(item.Events.Count, 300)
+        For index As Integer = 0 To previewCount - 1
+            builder.AppendLine(FormatKbmrEvent(item.Events(index)))
+        Next
+        If item.Events.Count > previewCount Then builder.AppendLine("……（仅显示前 " & previewCount & " 个事件）")
+        RecordContent.Text = builder.ToString()
+    End Sub
+
+    Private Function FormatKbmrEvent(item As KbmrEvent) As String
+        Dim time As String = (item.OffsetMs / 1000.0).ToString("0.000")
+        Select Case item.Kind
+            Case KbmrEventKind.KeyDown
+                Return $"[{time}] 按下 {KeyNameMapper.FormatKeyName(item.Vk)}"
+            Case KbmrEventKind.KeyUp
+                Return $"[{time}] 抬起 {KeyNameMapper.FormatKeyName(item.Vk)}"
+            Case KbmrEventKind.MouseDown
+                Return $"[{time}] 鼠标按下 ({item.X},{item.Y}) {MouseButtonName(item.Button)}"
+            Case KbmrEventKind.MouseUp
+                Return $"[{time}] 鼠标抬起 ({item.X},{item.Y}) {MouseButtonName(item.Button)}"
+            Case KbmrEventKind.MouseMove
+                Return $"[{time}] 移动 ({item.X},{item.Y})"
+            Case KbmrEventKind.Wheel
+                Return $"[{time}] 滚轮 {item.Delta}"
+            Case Else
+                Return $"[{time}] 未知事件"
+        End Select
+    End Function
+
+    Private Function MouseButtonName(button As Byte) As String
+        Select Case button
+            Case 2
+                Return "右键"
+            Case 3
+                Return "中键"
+            Case 4
+                Return "侧键1"
+            Case 5
+                Return "侧键2"
+            Case Else
+                Return "左键"
+        End Select
+    End Function
+
+    Private Sub RecordList_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
+        If RecordList.SelectedIndex < 0 Then Return
+        currentRecordingIndex = RecordList.SelectedIndex
+        UpdateRecordContent()
+        UpdateRecordButtons()
+    End Sub
+
+    Private Sub RecordList_MouseDoubleClick(sender As Object, e As MouseButtonEventArgs)
+        If RecordList.SelectedIndex >= 0 Then BtnRecordPlay_Click(Nothing, Nothing)
+    End Sub
+
+    Private Sub BtnRecordPlay_Click(sender As Object, e As RoutedEventArgs)
+        If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then
+            ShowMyMessage("请先选择一条录制。")
+            Return
+        End If
+        If InputRecorder.IsRecording Then StopRecordingAndSave()
+        If ScriptRunner.IsRunning Then
+            ShowMyMessage("脚本正在运行，请先停止脚本后再回放录制。")
+            Return
+        End If
+        If isClicking Then StopClick()
+        If isSending Then StopSend()
+        Dim item As KbmrRecording = recordings(currentRecordingIndex)
+        If item.Events.Count = 0 Then
+            ShowMyMessage("该录制没有内容。")
+            Return
+        End If
+        Dim speed As Double = 1.0
+        Select Case Combobox6.SelectedIndex
+            Case 0
+                speed = 0.5
+            Case 2
+                speed = 2.0
+            Case 3
+                speed = 4.0
+        End Select
+        MacroPlayer.StartPlayback(item, speed, ChkPlaybackLoop.IsChecked.GetValueOrDefault(False),
+                                  ChkPlaybackSmooth.IsChecked.GetValueOrDefault(True),
+                                  ChkPlaybackBlockInput.IsChecked.GetValueOrDefault(False))
+        RecordStatusLabel.Text = "正在回放……按""停止播放""或终止任务快捷键（默认 Ctrl+G）可结束。"
+        UpdateRecordButtons()
+    End Sub
+
+    Private Sub BtnRecordStopPlay_Click(sender As Object, e As RoutedEventArgs)
+        MacroPlayer.StopPlayback()
+    End Sub
+
+    Private Sub MacroPlayer_PlaybackStopped()
+        Dispatcher.BeginInvoke(New Action(Sub()
+                                              RecordStatusLabel.Text = "回放已停止。"
+                                              UpdateRecordButtons()
+                                          End Sub))
+    End Sub
+
+    Private Sub BtnRecordSave_Click(sender As Object, e As RoutedEventArgs)
+        If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then Return
+        Dim dialog As New SaveFileDialog With {
+            .Title = "保存录制",
+            .Filter = "键鼠管家录制文件 (*.kbmr)|*.kbmr|所有文件 (*.*)|*.*",
+            .DefaultExt = ".kbmr",
+            .AddExtension = True,
+            .OverwritePrompt = True,
+            .FileName = "录制"
+        }
+        If dialog.ShowDialog(Me) <> True Then Return
+        Try
+            File.WriteAllBytes(dialog.FileName, KbmrCodec.Serialize(recordings(currentRecordingIndex)))
+            ShowMyMessage("录制已保存到文件。")
+        Catch ex As Exception
+            ShowMyMessage("无法保存录制：" & ex.Message)
+        End Try
+    End Sub
+
+    Private Sub BtnRecordOpen_Click(sender As Object, e As RoutedEventArgs)
+        Dim dialog As New OpenFileDialog With {
+            .Title = "打开录制",
+            .Filter = "键鼠管家录制文件 (*.kbmr)|*.kbmr|所有文件 (*.*)|*.*",
+            .CheckFileExists = True,
+            .CheckPathExists = True,
+            .Multiselect = False
+        }
+        If dialog.ShowDialog(Me) <> True Then Return
+        Try
+            Dim result As KbmrRecording = KbmrCodec.Deserialize(File.ReadAllBytes(dialog.FileName))
+            result.Name = Path.GetFileNameWithoutExtension(dialog.FileName)
+            recordings.Add(result)
+            currentRecordingIndex = recordings.Count - 1
+            RefreshRecordList()
+            UpdateRecordButtons()
+            ShowMyMessage("录制已打开。")
+        Catch ex As Exception
+            ShowMyMessage("无法打开录制：" & ex.Message)
+        End Try
+    End Sub
+
+    Private Sub BtnRecordExport_Click(sender As Object, e As RoutedEventArgs)
+        If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then Return
+        TxtScriptEditor.Text = MacroScriptExporter.Generate(recordings(currentRecordingIndex))
+        currentScriptPath = ""
+        currentScriptHash = ""
+        currentScriptTrusted = False
+        TxtScriptTrustStatus.Text = "由录制生成（未信任）"
+        TabControl1.SelectedIndex = 5
+        ShowMyMessage("已生成脚本，可点击""运行""直接执行。")
+    End Sub
+
+    Private Sub UpdateRecordButtons()
+        Dim isRecording As Boolean = InputRecorder.IsRecording
+        Dim isPlaying As Boolean = MacroPlayer.IsPlaying
+        BtnRecordStart.IsEnabled = Not isRecording AndAlso Not isPlaying
+        BtnRecordStop.IsEnabled = isRecording
+        BtnRecordPlay.IsEnabled = currentRecordingIndex >= 0 AndAlso Not isRecording AndAlso Not isPlaying
+        BtnRecordStopPlay.IsEnabled = isPlaying
+        BtnRecordSave.IsEnabled = currentRecordingIndex >= 0
+        BtnRecordOpen.IsEnabled = Not isRecording AndAlso Not isPlaying
+        BtnRecordDelete.IsEnabled = currentRecordingIndex >= 0 AndAlso Not isRecording
+        BtnRecordExport.IsEnabled = currentRecordingIndex >= 0
+    End Sub
+
+#End Region
+
+#Region "Script"
+    '脚本
+    Private currentScriptPath As String = ""
+    Private currentScriptHash As String = ""
+    Private currentScriptTrusted As Boolean = False
+
+    Private Sub InitializeScriptSettings()
+        TxtScriptOutput.Text = ""
+        TxtScriptTrustStatus.Text = "未加载脚本"
+        UpdateScriptButtons()
+    End Sub
+
+    Private Sub BtnScriptRun_Click(sender As Object, e As RoutedEventArgs)
+        If ScriptRunner.IsRunning Then
+            ScriptRunner.StopScript()
+            Return
+        End If
+        Dim code As String = TxtScriptEditor.Text
+        If String.IsNullOrWhiteSpace(code) Then
+            ShowMyMessage("脚本内容为空。")
+            Return
+        End If
+        Dim analysis As ScriptAnalysisResult = ScriptSecurity.Analyze(code)
+        If analysis.SyntaxErrors.Count > 0 Then
+            ShowMyMessage("脚本存在语法错误，无法运行：" & vbCrLf & String.Join(vbCrLf, analysis.SyntaxErrors.Take(5)))
+            Return
+        End If
+        Dim hash As String = ScriptSecurity.ComputeTextHash(code)
+        If Not ScriptSecurity.IsTrusted(hash) Then
+            If Not PromptScriptTrust(analysis, If(currentScriptPath, "(编辑器中的脚本)"), hash) Then Return
+        End If
+        currentScriptHash = hash
+        currentScriptTrusted = ScriptSecurity.IsTrusted(hash)
+        AppendScriptOutput("=== 开始运行脚本 " & DateTime.Now.ToString("HH:mm:ss") & " ===")
+        ScriptRunner.RunScript(code)
+    End Sub
+
+    Private Function PromptScriptTrust(analysis As ScriptAnalysisResult, sourcePath As String, hash As String) As Boolean
+        Dim dialog As New ScriptSecurityWindow(analysis, sourcePath, hash)
+        dialog.Owner = Me
+        dialog.ShowDialog()
+        If dialog.Allowed AndAlso dialog.TrustRequested Then
+            ScriptSecurity.TrustScript(hash, sourcePath)
+        End If
+        Return dialog.Allowed
+    End Function
+
+    Private Sub BtnScriptSave_Click(sender As Object, e As RoutedEventArgs)
+        If String.IsNullOrWhiteSpace(TxtScriptEditor.Text) Then
+            ShowMyMessage("脚本内容为空。")
+            Return
+        End If
+        Dim dialog As New SaveFileDialog With {
+            .Title = "保存脚本",
+            .Filter = "PowerShell 脚本 (*.ps1)|*.ps1|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
+            .DefaultExt = ".ps1",
+            .AddExtension = True,
+            .OverwritePrompt = True,
+            .FileName = "脚本"
+        }
+        If dialog.ShowDialog(Me) <> True Then Return
+        Try
+            File.WriteAllText(dialog.FileName, TxtScriptEditor.Text, New UTF8Encoding(True))
+            currentScriptPath = dialog.FileName
+            currentScriptHash = ScriptSecurity.ComputeFileHash(dialog.FileName)
+            currentScriptTrusted = ScriptSecurity.IsTrusted(currentScriptHash)
+            UpdateScriptTrustStatus()
+            ShowMyMessage("脚本已保存到文件。")
+        Catch ex As Exception
+            ShowMyMessage("无法保存脚本：" & ex.Message)
+        End Try
+    End Sub
+
+    Private Sub BtnScriptOpen_Click(sender As Object, e As RoutedEventArgs)
+        Dim dialog As New OpenFileDialog With {
+            .Title = "加载脚本",
+            .Filter = "PowerShell 脚本 (*.ps1)|*.ps1|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
+            .CheckFileExists = True,
+            .CheckPathExists = True,
+            .Multiselect = False
+        }
+        If dialog.ShowDialog(Me) <> True Then Return
+        Try
+            Dim info As New FileInfo(dialog.FileName)
+            If info.Length > 4 * 1024 * 1024 Then Throw New InvalidDataException("脚本文件不能超过 4 MiB。")
+            Dim code As String = File.ReadAllText(dialog.FileName)
+            Dim analysis As ScriptAnalysisResult = ScriptSecurity.Analyze(code)
+            Dim hash As String = ScriptSecurity.ComputeFileHash(dialog.FileName)
+            If Not ScriptSecurity.IsTrusted(hash) Then
+                If Not PromptScriptTrust(analysis, dialog.FileName, hash) Then Return
+            End If
+            If analysis.SyntaxErrors.Count > 0 Then
+                ShowMyMessage("警告：脚本存在语法错误，已加载但无法运行：" & vbCrLf & String.Join(vbCrLf, analysis.SyntaxErrors.Take(5)))
+            End If
+            TxtScriptEditor.Text = code
+            currentScriptPath = dialog.FileName
+            currentScriptHash = hash
+            currentScriptTrusted = ScriptSecurity.IsTrusted(hash)
+            UpdateScriptTrustStatus()
+            AppendScriptOutput("已加载脚本：" & dialog.FileName)
+        Catch ex As Exception
+            ShowMyMessage("无法加载脚本：" & ex.Message)
+        End Try
+    End Sub
+
+    Private Sub BtnScriptClear_Click(sender As Object, e As RoutedEventArgs)
+        TxtScriptEditor.Clear()
+        currentScriptPath = ""
+        currentScriptHash = ""
+        currentScriptTrusted = False
+        UpdateScriptTrustStatus()
+    End Sub
+
+    Private Sub BtnScriptHelp_Click(sender As Object, e As RoutedEventArgs)
+        Dim helps As New List(Of String) From {
+            """脚本""页可以直接运行 PowerShell 5.1 脚本，并使用键鼠管家提供的自动化命令。",
+            "",
+            "常用命令：",
+            "  Delay 500                     等待 500 毫秒",
+            "  Move 100 200                  移动鼠标到 (100,200)",
+            "  Click 100 200 [Left]          点击，按钮可省略（Left/Right/Middle/X1/X2）",
+            "  DoubleClick 100 200           双击",
+            "  MouseDown / MouseUp Right     按住 / 松开鼠标",
+            "  Wheel 120                     滚轮（正数向上）",
+            "  Drag 100 100 300 300          从 (100,100) 拖到 (300,300)",
+            "  KeyDown CTRL / KeyUp CTRL     按下 / 抬起按键",
+            "  KeyTap ENTER                  单击按键",
+            "  Combo 'Ctrl+Shift+A'          发送组合键",
+            "  TypeText '你好'               输入文本（支持中文）",
+            "  BlockInput $true/$false       阻止 / 恢复用户输入（Ctrl+Alt+Del 可强制解除）",
+            "  Get-CursorPos                 获取鼠标位置（.X / .Y）",
+            "  Get-PixelColor 100 200        读取屏幕像素颜色（返回 #RRGGBB）",
+            "  Get-CursorColor               读取鼠标指针所在像素颜色",
+            "  Save-ScreenRegion 0 0 800 600 'C:\\shot.png'   保存屏幕区域截图",
+            "  Get-Windows [-Title '*记事本*'] [-Class '*']    枚举可见窗口",
+            "  Set-ForegroundWindow $hwnd    激活窗口；Close-Window / Move-Window 同理",
+            "  Get-ClipboardText / Set-ClipboardText '文本'    读写剪贴板",
+            "  Start-App 'notepad.exe'       启动程序",
+            "",
+            "安全机制：",
+            "  导入或首次运行脚本时会显示安全提醒，列出脚本将执行的操作。",
+            "  勾选""信任此脚本""后按文件哈希记住；文件被修改后会再次提醒。",
+            "  脚本以当前用户权限运行，请只运行来源可信的脚本。",
+            "  快捷键：默认 Ctrl+F4 开始/停止录制；Ctrl+G 终止全部任务。"
+        }
+        ShowHelp(helps, "脚本帮助")
+    End Sub
+
+    Private Sub BtnScriptClearTrust_Click(sender As Object, e As RoutedEventArgs)
+        Dim answer As MsgBoxResult = MsgBox("确定要清空所有已信任的脚本记录吗？清空后所有脚本都会重新弹出安全提醒。",
+                                            MsgBoxStyle.YesNo Or MsgBoxStyle.Question, "清空信任列表")
+        If answer <> MsgBoxResult.Yes Then Return
+        ScriptSecurity.ClearTrustedScripts()
+        currentScriptTrusted = False
+        UpdateScriptTrustStatus()
+        ShowMyMessage("信任列表已清空。")
+    End Sub
+
+    Private Sub ScriptRunner_OutputReceived(text As String)
+        Dispatcher.BeginInvoke(New Action(Sub() AppendScriptOutput(text)))
+    End Sub
+
+    Private Sub ScriptRunner_StateChanged(running As Boolean)
+        Dispatcher.BeginInvoke(New Action(Sub()
+                                              UpdateScriptButtons()
+                                              UpdateScriptTrustStatus()
+                                          End Sub))
+    End Sub
+
+    Private Sub AppendScriptOutput(text As String)
+        TxtScriptOutput.AppendText(text & vbCrLf)
+        TxtScriptOutput.ScrollToEnd()
+    End Sub
+
+    Private Sub UpdateScriptButtons()
+        If ScriptRunner.IsRunning Then
+            BtnScriptRun.Content = "停止运行"
+            TxtScriptTrustStatus.Text = "运行中……"
+        Else
+            BtnScriptRun.Content = "运行"
+            UpdateScriptTrustStatus()
+        End If
+        BtnScriptSave.IsEnabled = Not ScriptRunner.IsRunning
+        BtnScriptOpen.IsEnabled = Not ScriptRunner.IsRunning
+        BtnScriptClear.IsEnabled = Not ScriptRunner.IsRunning
+        BtnScriptClearTrust.IsEnabled = Not ScriptRunner.IsRunning
+    End Sub
+
+    Private Sub UpdateScriptTrustStatus()
+        If ScriptRunner.IsRunning Then
+            TxtScriptTrustStatus.Text = "运行中……"
+            Return
+        End If
+        If String.IsNullOrEmpty(currentScriptHash) Then
+            TxtScriptTrustStatus.Text = "未加载脚本"
+        ElseIf currentScriptTrusted OrElse ScriptSecurity.IsTrusted(currentScriptHash) Then
+            TxtScriptTrustStatus.Text = "已信任（哈希匹配）"
+        Else
+            TxtScriptTrustStatus.Text = "未信任"
+        End If
     End Sub
 
 #End Region

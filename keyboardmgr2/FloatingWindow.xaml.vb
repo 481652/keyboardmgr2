@@ -103,6 +103,8 @@ Public Class FloatingWindow
                     MainWindow1.Instance.ToggleSend()
                 Case 9004 '显示/隐藏主界面
                     MainWindow1.Instance.ToggleMainWindowVisibility()
+                Case 9005 '录制开关（热键按下时切换录制开始/停止）
+                    MainWindow1.Instance.ToggleRecording()
                 Case Else
             End Select
         End If
@@ -205,8 +207,8 @@ Public Class FloatingWindow
     End Sub
 
     Public Sub UnregisterGlobalHotkey() '注销所有全局热键
-        '注销所有可能已注册的热键ID（9000-9004）
-        For i As Integer = 9000 To 9004
+        '注销所有可能已注册的热键ID（9000-9005）
+        For i As Integer = 9000 To 9005
             UnregisterHotKey(New WindowInteropHelper(Me).Handle, i)
         Next
         hotkeynum = 0
@@ -542,6 +544,10 @@ Public Class FloatingWindow
         If LoafModule.InLoafMode Then LoafModule.ExitLoafMode()
         MainWindow1.Instance.StopClick()
         MainWindow1.Instance.StopSend()
+        MainWindow1.Instance.StopRecordingAndSave()
+        MacroPlayer.StopPlayback()
+        ScriptRunner.StopScript()
+        ScriptHost.ForceUnblockInput()
         MainWindow1.Instance.Show()
         FloatingWindow_Reset()
     End Sub
@@ -599,5 +605,25 @@ Public Class FloatingWindow
         MainWindow1.Instance.Show()
         MainWindow1.Instance.Activate()
         MainWindow1.Instance.TabControl1.SelectedIndex = 2
+    End Sub
+
+    Private Sub RecordButton_Click(sender As Object, e As RoutedEventArgs) '录制
+        MainWindow1.Instance.ShowInTaskbar = True
+        If MainWindow1.Instance.Visibility = Visibility.Hidden Then
+            MainWindow1.Instance.Visibility = Visibility.Visible
+        End If
+        MainWindow1.Instance.Show()
+        MainWindow1.Instance.Activate()
+        MainWindow1.Instance.TabControl1.SelectedIndex = 4
+    End Sub
+
+    Private Sub ScriptButton_Click(sender As Object, e As RoutedEventArgs) '脚本
+        MainWindow1.Instance.ShowInTaskbar = True
+        If MainWindow1.Instance.Visibility = Visibility.Hidden Then
+            MainWindow1.Instance.Visibility = Visibility.Visible
+        End If
+        MainWindow1.Instance.Show()
+        MainWindow1.Instance.Activate()
+        MainWindow1.Instance.TabControl1.SelectedIndex = 5
     End Sub
 End Class

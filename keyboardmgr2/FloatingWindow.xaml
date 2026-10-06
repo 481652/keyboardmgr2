@@ -24,6 +24,8 @@
                 <ColumnDefinition Width="44"/>
                 <ColumnDefinition Width="44"/>
                 <ColumnDefinition Width="44"/>
+                <ColumnDefinition Width="44"/>
+                <ColumnDefinition Width="44"/>
             </Grid.ColumnDefinitions>
 
             <Image Margin="1,2" Source="/appiconnew.ico" MouseUp="Image_MouseUp"/>
@@ -36,11 +38,19 @@
                     FontFamily="{DynamicResource iconFont}" FontSize="18" Content="{DynamicResource Icon.Send}"
                     Height="40" Width="40" Click="SendButton_Click" BorderBrush="{x:Null}"
                     Background="{x:Null}" ToolTip="打开列表连发"/>
-            <Button x:Name="stopButton" Grid.Column="4" Style="{DynamicResource DefaultButton}"
+            <Button x:Name="recordButton" Grid.Column="4" Style="{DynamicResource DefaultButton}"
+                    FontFamily="{DynamicResource iconFont}" FontSize="18" Content="{DynamicResource Icon.Record}"
+                    Height="40" Width="40" Click="RecordButton_Click" BorderBrush="{x:Null}"
+                    Background="{x:Null}" ToolTip="打开录制"/>
+            <Button x:Name="scriptButton" Grid.Column="5" Style="{DynamicResource DefaultButton}"
+                    FontFamily="{DynamicResource iconFont}" FontSize="18" Content="{DynamicResource Icon.Script}"
+                    Height="40" Width="40" Click="ScriptButton_Click" BorderBrush="{x:Null}"
+                    Background="{x:Null}" ToolTip="打开脚本"/>
+            <Button x:Name="stopButton" Grid.Column="6" Style="{DynamicResource DefaultButton}"
                     FontFamily="{DynamicResource iconFont}" FontSize="18" Content="{DynamicResource Icon.Stop}"
                     Height="40" Width="40" Click="StopButton_Click" BorderBrush="{x:Null}"
                     Visibility="Hidden" Background="{x:Null}"/>
-            <Button Grid.Column="5" Style="{DynamicResource DefaultButton}"
+            <Button Grid.Column="7" Style="{DynamicResource DefaultButton}"
                     FontFamily="{DynamicResource iconFont}" FontSize="18" Content="{DynamicResource Icon.Close}"
                     Height="40" Width="40" Click="Button_Click" BorderBrush="{x:Null}" Background="{x:Null}"/>
         </Grid>

@@ -13,6 +13,8 @@
             <sys:String x:Key="Icon.Stop">&#xE71A;</sys:String>
             <sys:String x:Key="Icon.Click">&#xE8B0;</sys:String>
             <sys:String x:Key="Icon.Send">&#xE724;</sys:String>
+            <sys:String x:Key="Icon.Record">&#xE7C8;</sys:String>
+            <sys:String x:Key="Icon.Script">&#xE943;</sys:String>
             <SolidColorBrush x:Key="TopmostButtonCheckedForeground" Color="White"/>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="resource/LightTheme.xaml"/>

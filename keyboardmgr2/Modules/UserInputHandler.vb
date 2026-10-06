@@ -560,6 +560,11 @@ Module UserInputHandler
     Public Const MOUSEEVENTF_LEFTUP = &H4 '模拟鼠标左键释放
     Public Const MOUSEEVENTF_RIGHTDOWN = &H8 '模拟鼠标右键按下
     Public Const MOUSEEVENTF_RIGHTUP = &H10 '模拟鼠标右键释放
+    Public Const MOUSEEVENTF_MIDDLEDOWN = &H20 '模拟鼠标中键按下
+    Public Const MOUSEEVENTF_MIDDLEUP = &H40 '模拟鼠标中键释放
+    Public Const MOUSEEVENTF_XDOWN = &H80 '模拟鼠标侧键按下
+    Public Const MOUSEEVENTF_XUP = &H100 '模拟鼠标侧键释放
+    Public Const MOUSEEVENTF_WHEEL = &H800 '模拟鼠标滚轮
     Public Declare Function GetCursorPos Lib "user32" (ByRef lpPoint As POINTAPI) As Long '全屏坐标声明
     Public Structure POINTAPI '声明坐标变量
         Public x As Integer '声明坐标变量为32位

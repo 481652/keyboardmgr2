@@ -108,7 +108,7 @@
 
             </TabItem>
             <TabItem Header="连发">
-                <Grid Background="{DynamicResource backgroundColor1}" Margin="6,4,6,8">
+                <Grid Background="{DynamicResource backgroundColor1}" Margin="10,8">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
@@ -253,36 +253,58 @@
                 <Grid Background="{DynamicResource backgroundColor1}" Margin="10,8">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <Grid Grid.Row="1">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-                        <Label Grid.Row="0" Content="录制" FontSize="23" FontWeight="Light"/>
-                        <Label Grid.Row="1" Content="录制你的键鼠操作，并在需要时重放。"/>
-                        <StackPanel Grid.Row="2" Orientation="Horizontal">
-                            <Button Style="{DynamicResource DefaultButton}" Content="开始录制" HorizontalAlignment="Left" Height="36" Width="173" Margin="15,14,0,0" Click="Button_Click_6"/>
-                            <Button Style="{DynamicResource DefaultButton}" Content="停止录制" HorizontalAlignment="Left" Height="36" Width="173" Margin="15,14,0,0" Click="Button_Click_8"/>
-                            <Button Style="{DynamicResource DefaultButton}" Content="删除录制" HorizontalAlignment="Left" Height="36" Width="173" Margin="15,14,0,0" Click="Button_Click_9"/>
-                        </StackPanel>
-                        <Grid Grid.Row="3" Margin="0,10,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="3*"/>
-                                <ColumnDefinition Width="8*"/>
-                            </Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Margin="0,0,8,0" Padding="6" BorderThickness="1" BorderBrush="#FFCCCCCC" CornerRadius="4" VerticalAlignment="Stretch">
-                                <ListBox x:Name="RecordList" BorderThickness="0" Background="Transparent" VerticalAlignment="Stretch" />
-                            </Border>
-                            <TextBox x:Name="RecordContent" BorderThickness="0" Background="Transparent" Grid.Column="1" AcceptsReturn="True" TextWrapping="Wrap" VerticalAlignment="Stretch"/>
-                        </Grid>
-
+                    <Label Content="录制" FontSize="23" FontWeight="Light"/>
+                    <StackPanel Grid.Row="1" Margin="0,4,0,0">
+                        <TextBlock TextWrapping="Wrap" Opacity="0.72"
+                                   Text="录制你的键鼠操作，并在需要时重放。"/>
+                        <WrapPanel Margin="0,10,0,0" Orientation="Horizontal">
+                            <Label Content="鼠标采样频率(ms)：" VerticalAlignment="Center"/>
+                            <TextBox x:Name="TxtRecordSampleRate" Width="64" Height="30" Text="15" VerticalContentAlignment="Center"
+                                     InputMethod.IsInputMethodEnabled="False" PreviewTextInput="TextBox_PreviewTextInput"
+                                     PreviewKeyDown="TextBox_PreviewKeyDown" Margin="0,0,16,0">
+                                <TextBox.CommandBindings>
+                                    <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"/>
+                                </TextBox.CommandBindings>
+                            </TextBox>
+                            <Label Content="回放速度：" VerticalAlignment="Center"/>
+                            <ComboBox x:Name="Combobox6" Style="{DynamicResource comboboxStyle}" Width="80" Margin="0,0,16,0" IsTextSearchEnabled="False">
+                                <ComboBoxItem Content="0.5x"/>
+                                <ComboBoxItem Content="1x"/>
+                                <ComboBoxItem Content="2x"/>
+                                <ComboBoxItem Content="4x"/>
+                            </ComboBox>
+                            <CheckBox x:Name="ChkPlaybackSmooth" Content="平滑移动" IsChecked="True" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                            <CheckBox x:Name="ChkPlaybackLoop" Content="循环播放" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                            <CheckBox x:Name="ChkPlaybackBlockInput" Content="回放时阻止用户输入" VerticalAlignment="Center"/>
+                        </WrapPanel>
+                        <WrapPanel Margin="0,10,0,0" Orientation="Horizontal">
+                            <Button x:Name="BtnRecordStart" Style="{DynamicResource DefaultButton}" Content="开始录制" Height="36" Width="120" Margin="0,0,8,8" Click="Button_Click_6"/>
+                            <Button x:Name="BtnRecordStop" Style="{DynamicResource DefaultButton}" Content="停止录制" Height="36" Width="120" Margin="0,0,8,8" Click="Button_Click_8" IsEnabled="False"/>
+                            <Button x:Name="BtnRecordPlay" Style="{DynamicResource DefaultButton}" Content="播放" Height="36" Width="90" Margin="0,0,8,8" Click="BtnRecordPlay_Click"/>
+                            <Button x:Name="BtnRecordStopPlay" Style="{DynamicResource DefaultButton}" Content="停止播放" Height="36" Width="100" Margin="0,0,8,8" Click="BtnRecordStopPlay_Click" IsEnabled="False"/>
+                            <Button x:Name="BtnRecordSave" Style="{DynamicResource DefaultButton}" Content="保存" Height="36" Width="80" Margin="0,0,8,8" Click="BtnRecordSave_Click"/>
+                            <Button x:Name="BtnRecordOpen" Style="{DynamicResource DefaultButton}" Content="加载" Height="36" Width="80" Margin="0,0,8,8" Click="BtnRecordOpen_Click"/>
+                            <Button x:Name="BtnRecordDelete" Style="{DynamicResource DefaultButton}" Content="删除" Height="36" Width="80" Margin="0,0,8,8" Click="Button_Click_9"/>
+                            <Button x:Name="BtnRecordExport" Style="{DynamicResource DefaultButton}" Content="导出为脚本" Height="36" Width="120" Margin="0,0,8,8" Click="BtnRecordExport_Click"/>
+                        </WrapPanel>
+                        <TextBlock x:Name="RecordStatusLabel" Opacity="0.72" Margin="0,2,0,0"/>
+                    </StackPanel>
+                    <Grid Grid.Row="2" Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="3*"/>
+                            <ColumnDefinition Width="8*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Margin="0,0,8,0" Padding="6" BorderThickness="1" BorderBrush="{DynamicResource ButtonBorderColor}" CornerRadius="4" VerticalAlignment="Stretch">
+                            <ListBox x:Name="RecordList" BorderThickness="0" Background="Transparent" VerticalAlignment="Stretch"
+                                     SelectionChanged="RecordList_SelectionChanged" MouseDoubleClick="RecordList_MouseDoubleClick"/>
+                        </Border>
+                        <TextBox x:Name="RecordContent" BorderThickness="0" Background="Transparent" Grid.Column="1" AcceptsReturn="True"
+                                 TextWrapping="NoWrap" VerticalAlignment="Stretch" IsReadOnly="True" FontFamily="Consolas" FontSize="12"
+                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
                     </Grid>
-
                 </Grid>
             </TabItem>
             <TabItem Header="脚本">
@@ -291,9 +313,29 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="140"/>
                     </Grid.RowDefinitions>
-                    <Label Content="脚本" FontSize="23" FontWeight="Light"/>
-
+                    <Grid>
+                        <Label Content="脚本" FontSize="23" FontWeight="Light"/>
+                        <TextBlock x:Name="TxtScriptTrustStatus" HorizontalAlignment="Right" VerticalAlignment="Center" Opacity="0.72"/>
+                    </Grid>
+                    <Border Grid.Row="1" BorderThickness="1" BorderBrush="{DynamicResource ButtonBorderColor}" CornerRadius="4" Padding="6" Margin="0,6,0,0">
+                        <TextBox x:Name="TxtScriptEditor" AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap" BorderThickness="0"
+                                 Background="Transparent" FontFamily="Consolas" FontSize="13" InputMethod.IsInputMethodEnabled="False"
+                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
+                    </Border>
+                    <WrapPanel Grid.Row="2" Margin="0,8,0,0" Orientation="Horizontal">
+                        <Button x:Name="BtnScriptRun" Style="{DynamicResource DefaultButton}" Content="运行" Height="36" Width="100" Margin="0,0,8,8" Click="BtnScriptRun_Click"/>
+                        <Button x:Name="BtnScriptSave" Style="{DynamicResource DefaultButton}" Content="保存脚本" Height="36" Width="100" Margin="0,0,8,8" Click="BtnScriptSave_Click"/>
+                        <Button x:Name="BtnScriptOpen" Style="{DynamicResource DefaultButton}" Content="加载脚本" Height="36" Width="100" Margin="0,0,8,8" Click="BtnScriptOpen_Click"/>
+                        <Button x:Name="BtnScriptClear" Style="{DynamicResource DefaultButton}" Content="清空" Height="36" Width="80" Margin="0,0,8,8" Click="BtnScriptClear_Click"/>
+                        <Button x:Name="BtnScriptHelp" Style="{DynamicResource DefaultButton}" Content="帮助" Height="36" Width="80" Margin="0,0,8,8" Click="BtnScriptHelp_Click"/>
+                        <Button x:Name="BtnScriptClearTrust" Style="{DynamicResource DefaultButton}" Content="清空信任列表" Height="36" Width="120" Margin="0,0,8,8" Click="BtnScriptClearTrust_Click"/>
+                    </WrapPanel>
+                    <Border Grid.Row="3" BorderThickness="1" BorderBrush="{DynamicResource ButtonBorderColor}" CornerRadius="4" Padding="6" Margin="0,8,0,0">
+                        <TextBox x:Name="TxtScriptOutput" IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                                 FontFamily="Consolas" FontSize="12" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/>
+                    </Border>
                 </Grid>
             </TabItem>
             <TabItem Header="选项">
@@ -369,6 +411,8 @@
                                     <ComboBoxItem Content="连点"/>
                                     <ComboBoxItem Content="连发"/>
                                     <ComboBoxItem Content="摸鱼"/>
+                                    <ComboBoxItem Content="录制"/>
+                                    <ComboBoxItem Content="脚本"/>
                                     <ComboBoxItem Content="选项"/>
                                     <ComboBoxItem Content="关于"/>
                                 </ComboBox>
@@ -381,6 +425,7 @@
                                     <ColumnDefinition Width="173"/>
                                 </Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
@@ -406,6 +451,12 @@
                                 </TextBox>
                                 <Label Grid.Row="3" Content="显示/隐藏主界面" VerticalAlignment="Center"/>
                                 <TextBox x:Name="KeyTextbox6" Grid.Row="3" Grid.Column="1" InputMethod.IsInputMethodEnabled="False" Height="32" Margin="0,3" PreviewTextInput="TextBox_PreviewTextInput">
+                                    <TextBox.CommandBindings>
+                                        <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"/>
+                                    </TextBox.CommandBindings>
+                                </TextBox>
+                                <Label Grid.Row="4" Content="录制开关" VerticalAlignment="Center"/>
+                                <TextBox x:Name="KeyTextbox7" Grid.Row="4" Grid.Column="1" InputMethod.IsInputMethodEnabled="False" Height="32" Margin="0,3" PreviewTextInput="TextBox_PreviewTextInput">
                                     <TextBox.CommandBindings>
                                         <CommandBinding Command="ApplicationCommands.Paste" CanExecute="CommandBinding_CanExecute1"/>
                                     </TextBox.CommandBindings>
