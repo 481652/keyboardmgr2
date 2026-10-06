@@ -601,10 +601,14 @@
     <!-- 菜单相关资源 -->
 
     <Style x:Key="MenuStyle" TargetType="{x:Type ContextMenu}"> 
+        <Setter Property="Background" Value="{DynamicResource backgroundColor1}"/>
+        <Setter Property="Foreground" Value="{DynamicResource foregroundColor1}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type ContextMenu}">
-                    <Border x:Name="Border" Background="{DynamicResource backgroundColor1}">
+                    <Border x:Name="Border" Background="{TemplateBinding Background}"
+                            BorderBrush="{DynamicResource ButtonBorderColor}" BorderThickness="1"
+                            CornerRadius="8" Padding="2">
                         <!--MenuItem 位置-->
                         <ItemsPresenter/>
                     </Border>
@@ -614,19 +618,49 @@
     </Style>
 
     <Style x:Key="MenuItemStyle" TargetType="{x:Type MenuItem}">
+        <Setter Property="Foreground" Value="{DynamicResource foregroundColor1}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type MenuItem}">
-                    <Border x:Name="border" VerticalAlignment="Center" Padding="25 5" Background="Transparent">
-                        <WrapPanel>
-                            <ContentPresenter ContentSource="Header" HorizontalAlignment="Left" VerticalAlignment="Center"/>
-                        </WrapPanel>
+                    <Border x:Name="border" VerticalAlignment="Center" Padding="12,7" Margin="3,1"
+                            Background="Transparent" CornerRadius="5">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <ContentPresenter x:Name="icon" Grid.Column="0" ContentSource="Icon"
+                                              VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <ContentPresenter Grid.Column="1" ContentSource="Header"
+                                              HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True">
+                        <Trigger Property="Icon" Value="{x:Null}">
+                            <Setter TargetName="icon" Property="Visibility" Value="Collapsed"/>
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                                <Condition Property="IsEnabled" Value="True"/>
+                            </MultiTrigger.Conditions>
                             <Setter Property="Background" Value="{DynamicResource ButtonHoverColor}" TargetName="border"/>
+                        </MultiTrigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="{DynamicResource ButtonDisabledFore}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="MenuSeparatorStyle" TargetType="{x:Type Separator}">
+        <Setter Property="Background" Value="{DynamicResource ButtonBorderColor}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Separator}">
+                    <Border Height="1" Margin="10,4" Background="{TemplateBinding Background}"/>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

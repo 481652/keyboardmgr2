@@ -12,11 +12,11 @@ Imports System.Windows
 '查看程序集特性的值
 
 <Assembly: AssemblyTitle("键鼠管家")>
-<Assembly: AssemblyDescription("键鼠管家-一个实用的连点连发工具")>
+<Assembly: AssemblyDescription("键鼠管家-一个实用的键鼠工具箱")>
 <Assembly: AssemblyCompany("LCS")>
-<Assembly: AssemblyProduct("keyboardmgr2")>
-<Assembly: AssemblyCopyright("Copyright © LCS 2020-2026")>
-<Assembly: AssemblyTrademark("")>
+<Assembly: AssemblyProduct("KeyboardManager 2")>
+<Assembly: AssemblyCopyright("By LCS 2020-2026")>
+<Assembly: AssemblyTrademark("KeyboardManager 2")>
 <Assembly: ComVisible(false)>
 
 '若要开始生成可本地化的应用程序，请设置
@@ -52,5 +52,5 @@ Imports System.Windows
 '      修订号
 '
 
-<Assembly: AssemblyVersion("2.2.5.1")>
-<Assembly: AssemblyFileVersion("2.2.5.1")>
+<Assembly: AssemblyVersion("2.3.0.0")>
+<Assembly: AssemblyFileVersion("2.3.0.0")>

@@ -20,6 +20,8 @@ End Class
 
 Public Class KbmrRecording
     Public Property Name As String
+    '历史录制对应的磁盘文件路径（不参与序列化，仅用于自动保存/重命名/删除）。
+    Public Property FilePath As String
     Public Property SampleIntervalMs As Integer
     Public Property ScreenWidth As Integer
     Public Property ScreenHeight As Integer

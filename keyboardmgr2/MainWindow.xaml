@@ -151,7 +151,50 @@
                                 <TextBlock x:Name="TxtItemCounter" Text="0 项" HorizontalAlignment="Right" Opacity="0.58" FontSize="12" VerticalAlignment="Center"/>
                             </Grid>
                             <ListBox x:Name="SendItemList" Grid.Row="1" Margin="6,0" BorderThickness="0" Background="Transparent"
-                                     SelectionChanged="SendItemList_SelectionChanged"/>
+                                     SelectionChanged="SendItemList_SelectionChanged"
+                                     PreviewMouseRightButtonDown="SendItemList_PreviewMouseRightButtonDown">
+                                <ListBox.ContextMenu>
+                                    <ContextMenu Style="{DynamicResource MenuStyle}" Opened="SendItemContextMenu_Opened">
+                                        <MenuItem x:Name="mnuSendAdd" Style="{DynamicResource MenuItemStyle}" Header="新增文字项" Click="BtnAddItem_Click">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE710;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem x:Name="mnuSendAddImage" Style="{DynamicResource MenuItemStyle}" Header="插入图片" Click="BtnAddImage_Click">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE91B;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem x:Name="mnuSendMoveUp" Style="{DynamicResource MenuItemStyle}" Header="上移当前项" Click="BtnMoveItemUp_Click">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE70E;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem x:Name="mnuSendMoveDown" Style="{DynamicResource MenuItemStyle}" Header="下移当前项" Click="BtnMoveItemDown_Click">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE70D;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <Separator Style="{DynamicResource MenuSeparatorStyle}"/>
+                                        <MenuItem x:Name="mnuSendDelete" Style="{DynamicResource MenuItemStyle}" Header="删除当前项" Click="BtnDeleteItem_Click">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE74D;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <Separator Style="{DynamicResource MenuSeparatorStyle}"/>
+                                        <MenuItem x:Name="mnuSendInsertText" Style="{DynamicResource MenuItemStyle}" Header="在后面插入文字" Click="BtnInsertTextAfterItem_Click">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE710;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem x:Name="mnuSendInsertImage" Style="{DynamicResource MenuItemStyle}" Header="在后面插入图片" Click="BtnAddImage_Click">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE91B;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                    </ContextMenu>
+                                </ListBox.ContextMenu>
+                            </ListBox>
                             <Grid Grid.Row="2" Margin="8,7,8,8">
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                     <Button x:Name="BtnAddItem" Style="{StaticResource RapidFireItemCommandButton}" Content="&#xE710;" ToolTip="新增文字项" Click="BtnAddItem_Click"/>
@@ -287,9 +330,10 @@
                             <Button x:Name="BtnRecordPlay" Style="{DynamicResource ToolBarIconButton}" Content="&#xE768;" ToolTip="播放" Click="BtnRecordPlay_Click"/>
                             <Button x:Name="BtnRecordStopPlay" Style="{DynamicResource ToolBarIconButton}" Content="&#xE769;" ToolTip="停止播放" Click="BtnRecordStopPlay_Click" IsEnabled="False"/>
                             <Separator/>
-                            <Button x:Name="BtnRecordSave" Style="{DynamicResource ToolBarIconButton}" Content="&#xE74E;" ToolTip="保存" Click="BtnRecordSave_Click"/>
+                            <Button x:Name="BtnRecordSave" Style="{DynamicResource ToolBarIconButton}" Content="&#xE74E;" ToolTip="另存为" Click="BtnRecordSave_Click"/>
                             <Button x:Name="BtnRecordOpen" Style="{DynamicResource ToolBarIconButton}" Content="&#xE8E5;" ToolTip="加载" Click="BtnRecordOpen_Click"/>
                             <Button x:Name="BtnRecordDelete" Style="{DynamicResource ToolBarIconButton}" Content="&#xE74D;" ToolTip="删除" Click="Button_Click_9"/>
+                            <Button x:Name="BtnRecordRename" Style="{DynamicResource ToolBarIconButton}" Content="&#xE8AC;" ToolTip="重命名" Click="BtnRecordRename_Click" IsEnabled="False"/>
                             <Separator/>
                             <Button x:Name="BtnRecordExport" Style="{DynamicResource ToolBarIconButton}" Content="&#xE943;" ToolTip="导出为脚本" Click="BtnRecordExport_Click"/>
                         </ToolBar>
@@ -302,7 +346,61 @@
                         </Grid.ColumnDefinitions>
                         <Border Grid.Column="0" Margin="0,0,8,0" Padding="6" BorderThickness="1" BorderBrush="{DynamicResource ButtonBorderColor}" CornerRadius="4" VerticalAlignment="Stretch">
                             <ListBox x:Name="RecordList" BorderThickness="0" Background="Transparent" VerticalAlignment="Stretch"
-                                     SelectionChanged="RecordList_SelectionChanged" MouseDoubleClick="RecordList_MouseDoubleClick"/>
+                                     SelectionChanged="RecordList_SelectionChanged" MouseDoubleClick="RecordList_MouseDoubleClick"
+                                     PreviewMouseRightButtonDown="RecordList_PreviewMouseRightButtonDown">
+                                <ListBox.ContextMenu>
+                                    <ContextMenu Style="{DynamicResource MenuStyle}" Opened="RecordContextMenu_Opened">
+                                        <MenuItem x:Name="mnuRecordStart" Style="{DynamicResource MenuItemStyle}" Header="开始录制" Click="Button_Click_6">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE7C8;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem x:Name="mnuRecordStop" Style="{DynamicResource MenuItemStyle}" Header="停止录制" Click="Button_Click_8">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE71A;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem x:Name="mnuRecordPlay" Style="{DynamicResource MenuItemStyle}" Header="播放" Click="BtnRecordPlay_Click">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE768;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem x:Name="mnuRecordStopPlay" Style="{DynamicResource MenuItemStyle}" Header="停止播放" Click="BtnRecordStopPlay_Click">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE769;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <Separator Style="{DynamicResource MenuSeparatorStyle}"/>
+                                        <MenuItem x:Name="mnuRecordSave" Style="{DynamicResource MenuItemStyle}" Header="另存为" Click="BtnRecordSave_Click">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE74E;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem x:Name="mnuRecordOpen" Style="{DynamicResource MenuItemStyle}" Header="从文件加载" Click="BtnRecordOpen_Click">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE8E5;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <Separator Style="{DynamicResource MenuSeparatorStyle}"/>
+                                        <MenuItem x:Name="mnuRecordRename" Style="{DynamicResource MenuItemStyle}" Header="重命名" Click="BtnRecordRename_Click">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE8AC;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem x:Name="mnuRecordDelete" Style="{DynamicResource MenuItemStyle}" Header="删除" Click="Button_Click_9">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE74D;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                        <Separator Style="{DynamicResource MenuSeparatorStyle}"/>
+                                        <MenuItem x:Name="mnuRecordExport" Style="{DynamicResource MenuItemStyle}" Header="导出为脚本" Click="BtnRecordExport_Click">
+                                            <MenuItem.Icon>
+                                                <TextBlock FontFamily="{DynamicResource iconFont}" FontSize="15" Text="&#xE943;"/>
+                                            </MenuItem.Icon>
+                                        </MenuItem>
+                                    </ContextMenu>
+                                </ListBox.ContextMenu>
+                            </ListBox>
                         </Border>
                         <TextBox x:Name="RecordContent" BorderThickness="0" Background="Transparent" Grid.Column="1" AcceptsReturn="True"
                                  TextWrapping="NoWrap" VerticalAlignment="Stretch" IsReadOnly="True" FontFamily="Consolas" FontSize="12"

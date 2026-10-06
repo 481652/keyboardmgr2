@@ -578,6 +578,8 @@ Public Class FloatingWindow
         stopButton.Visibility = Visibility.Collapsed
         clickButton.Visibility = Visibility.Visible
         sendButton.Visibility = Visibility.Visible
+        recordButton.Visibility = Visibility.Visible
+        scriptButton.Visibility = Visibility.Visible
     End Sub
 
     Public Sub FloatingWindowEvent_Send()
@@ -585,6 +587,8 @@ Public Class FloatingWindow
         stopButton.Visibility = Visibility.Visible
         clickButton.Visibility = Visibility.Collapsed
         sendButton.Visibility = Visibility.Collapsed
+        recordButton.Visibility = Visibility.Collapsed
+        scriptButton.Visibility = Visibility.Collapsed
         If FloatingWindowState <> 0 Then
             If Not IsVisible Then Show()
             Unfold()
@@ -596,6 +600,41 @@ Public Class FloatingWindow
         stopButton.Visibility = Visibility.Visible
         clickButton.Visibility = Visibility.Collapsed
         sendButton.Visibility = Visibility.Collapsed
+        recordButton.Visibility = Visibility.Collapsed
+        scriptButton.Visibility = Visibility.Collapsed
+        If FloatingWindowState <> 0 Then Unfold()
+        RegisterGlobalHotkey(stopActHotkeys, 9000)
+    End Sub
+
+    Public Sub FloatingWindowEvent_Record()
+        titleLabel.Content = "键鼠管家-录制中"
+        stopButton.Visibility = Visibility.Visible
+        clickButton.Visibility = Visibility.Collapsed
+        sendButton.Visibility = Visibility.Collapsed
+        recordButton.Visibility = Visibility.Collapsed
+        scriptButton.Visibility = Visibility.Collapsed
+        If FloatingWindowState <> 0 Then Unfold()
+        RegisterGlobalHotkey(stopActHotkeys, 9000)
+    End Sub
+
+    Public Sub FloatingWindowEvent_Playback()
+        titleLabel.Content = "键鼠管家-回放中"
+        stopButton.Visibility = Visibility.Visible
+        clickButton.Visibility = Visibility.Collapsed
+        sendButton.Visibility = Visibility.Collapsed
+        recordButton.Visibility = Visibility.Collapsed
+        scriptButton.Visibility = Visibility.Collapsed
+        If FloatingWindowState <> 0 Then Unfold()
+        RegisterGlobalHotkey(stopActHotkeys, 9000)
+    End Sub
+
+    Public Sub FloatingWindowEvent_Script()
+        titleLabel.Content = "键鼠管家-脚本执行中"
+        stopButton.Visibility = Visibility.Visible
+        clickButton.Visibility = Visibility.Collapsed
+        sendButton.Visibility = Visibility.Collapsed
+        recordButton.Visibility = Visibility.Collapsed
+        scriptButton.Visibility = Visibility.Collapsed
         If FloatingWindowState <> 0 Then Unfold()
         RegisterGlobalHotkey(stopActHotkeys, 9000)
     End Sub

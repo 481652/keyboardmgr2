@@ -22,6 +22,10 @@ Module ThemeModule
     Private Function SetWindowCompositionAttribute(hWnd As IntPtr, ByRef data As WindowCompositionAttributeData) As Boolean
     End Function
 
+    <DllImport("user32.dll", SetLastError:=True)>
+    Private Function GetWindowLong(hWnd As IntPtr, nIndex As Integer) As Integer
+    End Function
+
     Private Structure Margins
         Public Left As Integer
         Public Right As Integer
@@ -55,6 +59,8 @@ Module ThemeModule
     Private Const WCA_ACCENT_POLICY As Integer = 19
     Private Const ACCENT_DISABLED As Integer = 0
     Private Const ACCENT_ENABLE_HOSTBACKDROP As Integer = 5
+    Private Const GWL_EXSTYLE As Integer = -20
+    Private Const WS_EX_LAYERED As Integer = &H80000
 
     Public isDarkTheme As Boolean = False
     Public isMicaEnabled As Boolean = False
@@ -213,6 +219,51 @@ Module ThemeModule
             SetWindowCompositionAttribute(hwnd, data)
         Finally
             Marshal.FreeHGlobal(policyPointer)
+        End Try
+    End Sub
+
+    '为右键菜单应用与窗口一致的云母效果；系统/窗口不支持时退化为半透明背景
+    Public Sub UpdateMenuBackdrop(menu As ContextMenu)
+        If menu Is Nothing Then Return
+        Dim baseBrush As SolidColorBrush = TryCast(Windows.Application.Current.TryFindResource("backgroundColor1"), SolidColorBrush)
+        Dim useMica As Boolean = isMicaEnabled AndAlso IsWindows11_22H2OrLater()
+
+        If Not useMica Then
+            menu.Background = baseBrush
+            Return
+        End If
+
+        '先使用半透明背景兜底，若系统成功应用云母再改为完全透明
+        If baseBrush IsNot Nothing Then
+            Dim baseColor As Color = baseBrush.Color
+            Dim alpha As Byte = If(isDarkTheme, CByte(210), CByte(225))
+            menu.Background = New SolidColorBrush(Color.FromArgb(alpha, baseColor.R, baseColor.G, baseColor.B))
+        End If
+
+        Try
+            Dim source As HwndSource = TryCast(PresentationSource.FromVisual(menu), HwndSource)
+            If source Is Nothing Then Return
+            Dim hwnd As IntPtr = source.Handle
+            If hwnd = IntPtr.Zero Then Return
+            '分层（透明）窗口无法使用系统背景，保持半透明兜底即可
+            If (GetWindowLong(hwnd, GWL_EXSTYLE) And WS_EX_LAYERED) <> 0 Then Return
+
+            Dim darkModeValue As Integer = If(isDarkTheme, 1, 0)
+            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, darkModeValue, Marshal.SizeOf(darkModeValue))
+
+            Dim backdropType As Integer = DWMSBT_MAINWINDOW
+            If DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, backdropType, Marshal.SizeOf(backdropType)) <> 0 Then Return
+
+            Dim cornerPreference As Integer = DWMWCP_ROUND
+            DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, cornerPreference, Marshal.SizeOf(cornerPreference))
+
+            Dim frameMargins As New Margins With {.Left = -1, .Right = -1, .Top = -1, .Bottom = -1}
+            If DwmExtendFrameIntoClientArea(hwnd, frameMargins) = 0 Then
+                menu.Background = Brushes.Transparent
+                If source.CompositionTarget IsNot Nothing Then source.CompositionTarget.BackgroundColor = Colors.Transparent
+            End If
+        Catch
+            '保持半透明兜底背景
         End Try
     End Sub
 #End Region

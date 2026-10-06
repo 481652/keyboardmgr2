@@ -127,6 +127,7 @@
     <Compile Include="Modules\OpEngine.vb" />
     <Compile Include="Modules\MacroModel.vb" />
     <Compile Include="Modules\KbmrCodec.vb" />
+    <Compile Include="Modules\RecordingStore.vb" />
     <Compile Include="Modules\InputRecorder.vb" />
     <Compile Include="Modules\MacroPlayer.vb" />
     <Compile Include="Modules\KeyNameMapper.vb" />

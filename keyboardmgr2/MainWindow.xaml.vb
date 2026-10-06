@@ -94,9 +94,11 @@ Public Class MainWindow1
 
     Dim savedkeys As New List(Of Key)
 
-    '窗口位置记忆：拖动/缩放后延迟保存，避免频繁写注册表；开机自启挪到屏幕外时不会被记录
+    '窗口位置记忆
     Private ReadOnly windowPlacementTimer As New DispatcherTimer(DispatcherPriority.Background)
     Private Const WindowPlacementSaveDelayMilliseconds As Integer = 800
+    '实验性功能
+    Public isExperimentalFeatureEnabled As Boolean = ReadSetting("IsExperimentalFeatureEnabled", 0) = 1
 
 #End Region
 
@@ -142,9 +144,20 @@ Public Class MainWindow1
         SetWindowLong(hwnd, GWL_STYLE, style And Not WS_MAXIMIZEBOX)
         '创建第一条“连发”项目
         SaveCurrentItem()
-        sendPhrases.Add(RapidFireItem.CreateText("未命名条目"))
+        sendPhrases.Add(RapidFireItem.CreateText(""))
         currentSendIndex = sendPhrases.Count - 1
         UpdateItemDisplay()
+        '检查实验性功能（脚本）
+        If isExperimentalFeatureEnabled Then
+            ShowMyMessage("注意：您已启用实验性功能，可能会导致程序不稳定或异常，请谨慎使用。")
+        Else
+            '隐藏一切跟脚本有关的控件
+            floatingWindow.scriptButton.Visibility = Visibility.Collapsed
+            Dim scriptTab As TabItem = TabControl1.Items(5)
+            scriptTab.Visibility = Visibility.Collapsed
+            BtnRecordExport.Visibility = Visibility.Collapsed
+            '同时托盘右键也会隐藏，代码见MyTrayicon.vb
+        End If
     End Sub
 
     Private Async Sub LoadLatestCommitId()
@@ -829,6 +842,117 @@ Public Class MainWindow1
 
 #End Region
 
+#Region "ListBoxContextMenu"
+    'listbox的右键菜单
+
+    '右键点击时先选中指针下的项，使右键菜单作用于正确的目标
+    Private Sub RecordList_PreviewMouseRightButtonDown(sender As Object, e As MouseButtonEventArgs)
+        Dim container As ListBoxItem = FindListBoxItemContainer(RecordList, e.OriginalSource)
+        If container IsNot Nothing Then container.IsSelected = True
+    End Sub
+
+    Private Sub SendItemList_PreviewMouseRightButtonDown(sender As Object, e As MouseButtonEventArgs)
+        Dim container As ListBoxItem = FindListBoxItemContainer(SendItemList, e.OriginalSource)
+        If container IsNot Nothing Then container.IsSelected = True
+    End Sub
+
+    '录制列表右键菜单
+    Private Sub RecordContextMenu_Opened(sender As Object, e As RoutedEventArgs)
+        Dim menu As ContextMenu = TryCast(sender, ContextMenu)
+        If menu Is Nothing Then Return
+        Dim isRecording As Boolean = InputRecorder.IsRecording
+        Dim isPlaying As Boolean = MacroPlayer.IsPlaying
+        Dim hasSelection As Boolean = currentRecordingIndex >= 0 AndAlso currentRecordingIndex < recordings.Count
+        SetMenuVisibility(mnuRecordStart, Not isRecording AndAlso Not isPlaying)
+        SetMenuVisibility(mnuRecordStop, isRecording)
+        SetMenuVisibility(mnuRecordPlay, hasSelection AndAlso Not isRecording AndAlso Not isPlaying)
+        SetMenuVisibility(mnuRecordStopPlay, isPlaying)
+        SetMenuVisibility(mnuRecordSave, hasSelection)
+        SetMenuVisibility(mnuRecordOpen, Not isRecording AndAlso Not isPlaying)
+        SetMenuVisibility(mnuRecordRename, hasSelection AndAlso Not isRecording)
+        SetMenuVisibility(mnuRecordDelete, hasSelection AndAlso Not isRecording)
+        SetMenuVisibility(mnuRecordExport, hasSelection)
+        RefreshMenuSeparators(menu)
+        ApplyMenuBackdropAsync(menu)
+    End Sub
+
+    '连发列表右键菜单
+    Private Sub SendItemContextMenu_Opened(sender As Object, e As RoutedEventArgs)
+        Dim menu As ContextMenu = TryCast(sender, ContextMenu)
+        If menu Is Nothing Then Return
+        Dim hasSelection As Boolean = currentSendIndex >= 0 AndAlso currentSendIndex < sendPhrases.Count
+        Dim canAdd As Boolean = sendPhrases.Count < RapidFirePresetCodec.MaximumItemCount
+        '没有选中项时提供新增；选中项时提供上移/下移/删除/在后面插入。
+        SetMenuVisibility(mnuSendAdd, Not hasSelection)
+        SetMenuVisibility(mnuSendAddImage, Not hasSelection AndAlso canAdd)
+        SetMenuVisibility(mnuSendMoveUp, hasSelection AndAlso currentSendIndex > 0)
+        SetMenuVisibility(mnuSendMoveDown, hasSelection AndAlso currentSendIndex < sendPhrases.Count - 1)
+        SetMenuVisibility(mnuSendDelete, hasSelection)
+        SetMenuVisibility(mnuSendInsertText, hasSelection AndAlso canAdd)
+        SetMenuVisibility(mnuSendInsertImage, hasSelection AndAlso canAdd)
+        RefreshMenuSeparators(menu)
+        ApplyMenuBackdropAsync(menu)
+    End Sub
+
+    Private Sub SetMenuVisibility(item As Control, visible As Boolean)
+        If item Is Nothing Then Return
+        item.Visibility = If(visible, Visibility.Visible, Visibility.Collapsed)
+    End Sub
+
+    '收起多余的分隔线
+    Private Sub RefreshMenuSeparators(menu As ContextMenu)
+        If menu Is Nothing Then Return
+        Dim items As ItemCollection = menu.Items
+        Dim seenVisibleItem As Boolean = False
+        Dim lastWasSeparator As Boolean = False
+        For index As Integer = 0 To items.Count - 1
+            Dim separator As Separator = TryCast(items(index), Separator)
+            If separator IsNot Nothing Then
+                If Not seenVisibleItem OrElse lastWasSeparator Then
+                    separator.Visibility = Visibility.Collapsed
+                Else
+                    separator.Visibility = Visibility.Visible
+                    lastWasSeparator = True
+                End If
+            Else
+                Dim menuItem As MenuItem = TryCast(items(index), MenuItem)
+                If menuItem IsNot Nothing AndAlso menuItem.Visibility = Visibility.Visible Then
+                    seenVisibleItem = True
+                    lastWasSeparator = False
+                End If
+            End If
+        Next
+
+        Dim seenVisibleFromEnd As Boolean = False
+        For index As Integer = items.Count - 1 To 0 Step -1
+            Dim separator As Separator = TryCast(items(index), Separator)
+            If separator IsNot Nothing Then
+                If Not seenVisibleFromEnd Then separator.Visibility = Visibility.Collapsed
+            Else
+                Dim menuItem As MenuItem = TryCast(items(index), MenuItem)
+                If menuItem IsNot Nothing AndAlso menuItem.Visibility = Visibility.Visible Then seenVisibleFromEnd = True
+            End If
+        Next
+    End Sub
+
+    '菜单弹出后再应用云母，确保此时弹窗的 HWND 已创建
+    Private Sub ApplyMenuBackdropAsync(menu As ContextMenu)
+        Dispatcher.BeginInvoke(New Action(Sub() ThemeModule.UpdateMenuBackdrop(menu)))
+    End Sub
+
+    Private Function FindListBoxItemContainer(listBox As ListBox, source As Object) As ListBoxItem
+        Dim current As DependencyObject = TryCast(source, DependencyObject)
+        While current IsNot Nothing AndAlso Not TypeOf current Is ListBoxItem
+            If TypeOf current Is Visual Then
+                current = VisualTreeHelper.GetParent(current)
+            Else
+                current = LogicalTreeHelper.GetParent(current)
+            End If
+        End While
+        Return TryCast(current, ListBoxItem)
+    End Function
+#End Region
+
 #Region "Click"
     '连点
     Private Sub Button_Click_7(sender As Object, e As RoutedEventArgs) '保存连点设置
@@ -978,7 +1102,6 @@ Public Class MainWindow1
             Return
         End If
         If isSending Then StopSend()
-
         Dim isLongPress As Boolean = CheckBox4.IsChecked = True
         Dim intervalMs As Integer = 0
         If Not isLongPress Then
@@ -1002,11 +1125,10 @@ Public Class MainWindow1
             isClicking = True
             Hide()
             floatingWindow.FloatingWindowEvent_Click()
-            '等待启动按钮自身的按键抬起事件完成，避免它立即释放模拟的长按。
+            '等待启动按钮自身的按键抬起事件完成，避免它立即释放模拟的长按
             Dispatcher.BeginInvoke(New Action(Sub() BeginKeyboardHoldCore(holdKeys)), DispatcherPriority.Background)
             Return
         End If
-
         '准备鼠标基准坐标
         Dim baseX As Integer = 0
         Dim baseY As Integer = 0
@@ -1362,6 +1484,20 @@ Public Class MainWindow1
         RichTextBox1.Focus()
     End Sub
 
+    '在当前项后面插入文字项（右键菜单使用）
+    Private Sub BtnInsertTextAfterItem_Click(sender As Object, e As RoutedEventArgs)
+        SaveCurrentItem()
+        If sendPhrases.Count >= RapidFirePresetCodec.MaximumItemCount Then
+            ShowMyMessage("连发预设最多支持10000个条目。")
+            Return
+        End If
+        Dim insertIndex As Integer = If(currentSendIndex >= 0, currentSendIndex + 1, sendPhrases.Count)
+        sendPhrases.Insert(insertIndex, RapidFireItem.CreateText(String.Empty))
+        currentSendIndex = insertIndex
+        UpdateItemDisplay()
+        RichTextBox1.Focus()
+    End Sub
+
     Private Sub BtnAddImage_Click(sender As Object, e As RoutedEventArgs)
         SaveCurrentItem()
         If sendPhrases.Count >= RapidFirePresetCodec.MaximumItemCount Then
@@ -1586,8 +1722,7 @@ Public Class MainWindow1
         End Try
     End Sub
 
-    '点选输入框：隐藏主窗口，捕获用户在目标窗口输入框上的点击位置，
-    '之后连发会直接点击该位置并输入文本（对 QQ 等难以自动识别的应用最可靠）。
+    '点选输入框
     Private Sub BtnCaptureInputBox_Click(sender As Object, e As RoutedEventArgs)
         If isSending Then StopSend()
         AddHandler UserInputHandler.PointCaptured, AddressOf OnInputBoxCaptured
@@ -1941,7 +2076,7 @@ Public Class MainWindow1
         activeImageClipboardData = New DataObject()
         activeImageClipboardData.SetImage(bitmap)
         activeImageClipboardData.SetData("PNG", New MemoryStream(pngBytes, False), False)
-        'copy=False 避免 OLE 同步持久化被第三方剪贴板监听器无限阻塞。
+        'copy=False 避免 OLE 同步持久化被第三方剪贴板监听器无限阻塞
         Clipboard.SetDataObject(activeImageClipboardData, False)
     End Sub
 
@@ -1961,6 +2096,10 @@ Public Class MainWindow1
         ChkPlaybackLoop.IsChecked = ReadSetting("RecordPlaybackLoop", 0) = 1
         ChkPlaybackBlockInput.IsChecked = ReadSetting("RecordPlaybackBlockInput", 0) = 1
         Combobox6.SelectedIndex = 1
+        '载入自动保存的历史录制
+        recordings = RecordingStore.LoadAll()
+        currentRecordingIndex = -1
+        RefreshRecordList()
         UpdateRecordButtons()
     End Sub
 
@@ -1985,6 +2124,8 @@ Public Class MainWindow1
         InputRecorder.StartRecording(rate)
         RecordStatusLabel.Text = "正在录制……按""停止录制""或录制快捷键结束。"
         UpdateRecordButtons()
+        Hide()
+        floatingWindow.FloatingWindowEvent_Record()
     End Sub
 
     '停止录制
@@ -1997,11 +2138,17 @@ Public Class MainWindow1
         Dim result As KbmrRecording = InputRecorder.StopRecording()
         If result Is Nothing Then Return
         result.Name = "录制 " & DateTime.Now.ToString("MM-dd HH:mm:ss")
+        '自动保存到历史目录，使录制在重启后仍然保留
+        If Not RecordingStore.Save(result) Then
+            ShowMyMessage("录制已完成，但自动保存历史失败，请使用""另存为""导出到文件。")
+        End If
         recordings.Add(result)
         currentRecordingIndex = recordings.Count - 1
         RefreshRecordList()
         RecordStatusLabel.Text = "录制完成：" & result.Events.Count & " 个事件，" & (result.DurationMs / 1000.0).ToString("0.0") & " 秒。"
         UpdateRecordButtons()
+        Show()
+        floatingWindow.FloatingWindow_Reset()
     End Sub
 
     Public Sub ToggleRecording()
@@ -2015,6 +2162,8 @@ Public Class MainWindow1
     '删除录制
     Private Sub Button_Click_9(sender As Object, e As RoutedEventArgs)
         If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then Return
+        '同时删除自动保存的历史文件
+        RecordingStore.Delete(recordings(currentRecordingIndex))
         recordings.RemoveAt(currentRecordingIndex)
         If recordings.Count = 0 Then
             currentRecordingIndex = -1
@@ -2023,6 +2172,21 @@ Public Class MainWindow1
         End If
         RefreshRecordList()
         UpdateRecordButtons()
+    End Sub
+
+    '重命名录制
+    'todo：写一个通用的重命名对话框（fluent风格），支持输入验证和非法字符过滤
+    Private Sub BtnRecordRename_Click(sender As Object, e As RoutedEventArgs)
+        If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then Return
+        Dim item As KbmrRecording = recordings(currentRecordingIndex)
+        Dim newName As String = InputBox("请输入新的录制名称：", "重命名录制", item.Name)
+        If String.IsNullOrWhiteSpace(newName) Then Return
+        If Not RecordingStore.Rename(item, newName) Then
+            ShowMyMessage("重命名失败，请检查名称是否为空或包含非法字符。")
+            Return
+        End If
+        RefreshRecordList()
+        RecordStatusLabel.Text = "已重命名为：" & item.Name
     End Sub
 
     Private Sub RefreshRecordList()
@@ -2134,8 +2298,10 @@ Public Class MainWindow1
         MacroPlayer.StartPlayback(item, speed, ChkPlaybackLoop.IsChecked.GetValueOrDefault(False),
                                   ChkPlaybackSmooth.IsChecked.GetValueOrDefault(True),
                                   ChkPlaybackBlockInput.IsChecked.GetValueOrDefault(False))
-        RecordStatusLabel.Text = "正在回放……按""停止播放""或终止任务快捷键（默认 Ctrl+G）可结束。"
+        RecordStatusLabel.Text = "正在回放……按""停止播放""或终止任务快捷键可结束。"
         UpdateRecordButtons()
+        Hide（）
+        floatingWindow.FloatingWindowEvent_Playback()
     End Sub
 
     Private Sub BtnRecordStopPlay_Click(sender As Object, e As RoutedEventArgs)
@@ -2144,8 +2310,10 @@ Public Class MainWindow1
 
     Private Sub MacroPlayer_PlaybackStopped()
         Dispatcher.BeginInvoke(New Action(Sub()
-                                              RecordStatusLabel.Text = "回放已停止。"
+                                              RecordStatusLabel.Text = "回放已停止或结束。"
                                               UpdateRecordButtons()
+                                              Show()
+                                              floatingWindow.FloatingWindow_Reset()
                                           End Sub))
     End Sub
 
@@ -2180,17 +2348,19 @@ Public Class MainWindow1
         Try
             Dim result As KbmrRecording = KbmrCodec.Deserialize(File.ReadAllBytes(dialog.FileName))
             result.Name = Path.GetFileNameWithoutExtension(dialog.FileName)
+            '将打开的录制纳入历史目录，方便下次直接使用
+            RecordingStore.Save(result)
             recordings.Add(result)
             currentRecordingIndex = recordings.Count - 1
             RefreshRecordList()
             UpdateRecordButtons()
-            ShowMyMessage("录制已打开。")
+            ShowMyMessage("录制已打开并加入历史录制。")
         Catch ex As Exception
             ShowMyMessage("无法打开录制：" & ex.Message)
         End Try
     End Sub
 
-    Private Sub BtnRecordExport_Click(sender As Object, e As RoutedEventArgs)
+    Private Sub BtnRecordExport_Click(sender As Object, e As RoutedEventArgs) '待实现
         If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then Return
         currentScriptPath = ""
         currentScriptHash = ""
@@ -2210,13 +2380,15 @@ Public Class MainWindow1
         BtnRecordSave.IsEnabled = currentRecordingIndex >= 0
         BtnRecordOpen.IsEnabled = Not isRecording AndAlso Not isPlaying
         BtnRecordDelete.IsEnabled = currentRecordingIndex >= 0 AndAlso Not isRecording
+        BtnRecordRename.IsEnabled = currentRecordingIndex >= 0 AndAlso Not isRecording
         BtnRecordExport.IsEnabled = currentRecordingIndex >= 0
     End Sub
+
 
 #End Region
 
 #Region "Script"
-    '脚本
+    '脚本（实验性功能）
     Private currentScriptPath As String = ""
     Private currentScriptHash As String = ""
     Private currentScriptTrusted As Boolean = False
