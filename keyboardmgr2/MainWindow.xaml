@@ -280,16 +280,19 @@
                             <CheckBox x:Name="ChkPlaybackLoop" Content="循环播放" VerticalAlignment="Center" Margin="0,0,12,0"/>
                             <CheckBox x:Name="ChkPlaybackBlockInput" Content="回放时阻止用户输入" VerticalAlignment="Center"/>
                         </WrapPanel>
-                        <WrapPanel Margin="0,10,0,0" Orientation="Horizontal">
-                            <Button x:Name="BtnRecordStart" Style="{DynamicResource DefaultButton}" Content="开始录制" Height="36" Width="120" Margin="0,0,8,8" Click="Button_Click_6"/>
-                            <Button x:Name="BtnRecordStop" Style="{DynamicResource DefaultButton}" Content="停止录制" Height="36" Width="120" Margin="0,0,8,8" Click="Button_Click_8" IsEnabled="False"/>
-                            <Button x:Name="BtnRecordPlay" Style="{DynamicResource DefaultButton}" Content="播放" Height="36" Width="90" Margin="0,0,8,8" Click="BtnRecordPlay_Click"/>
-                            <Button x:Name="BtnRecordStopPlay" Style="{DynamicResource DefaultButton}" Content="停止播放" Height="36" Width="100" Margin="0,0,8,8" Click="BtnRecordStopPlay_Click" IsEnabled="False"/>
-                            <Button x:Name="BtnRecordSave" Style="{DynamicResource DefaultButton}" Content="保存" Height="36" Width="80" Margin="0,0,8,8" Click="BtnRecordSave_Click"/>
-                            <Button x:Name="BtnRecordOpen" Style="{DynamicResource DefaultButton}" Content="加载" Height="36" Width="80" Margin="0,0,8,8" Click="BtnRecordOpen_Click"/>
-                            <Button x:Name="BtnRecordDelete" Style="{DynamicResource DefaultButton}" Content="删除" Height="36" Width="80" Margin="0,0,8,8" Click="Button_Click_9"/>
-                            <Button x:Name="BtnRecordExport" Style="{DynamicResource DefaultButton}" Content="导出为脚本" Height="36" Width="120" Margin="0,0,8,8" Click="BtnRecordExport_Click"/>
-                        </WrapPanel>
+                        <ToolBar Style="{DynamicResource ToolBarStyle}" Margin="0,10,0,0">
+                            <Button x:Name="BtnRecordStart" Style="{DynamicResource ToolBarIconButton}" Content="&#xE7C8;" ToolTip="开始录制" Click="Button_Click_6"/>
+                            <Button x:Name="BtnRecordStop" Style="{DynamicResource ToolBarIconButton}" Content="&#xE71A;" ToolTip="停止录制" Click="Button_Click_8" IsEnabled="False"/>
+                            <Separator/>
+                            <Button x:Name="BtnRecordPlay" Style="{DynamicResource ToolBarIconButton}" Content="&#xE768;" ToolTip="播放" Click="BtnRecordPlay_Click"/>
+                            <Button x:Name="BtnRecordStopPlay" Style="{DynamicResource ToolBarIconButton}" Content="&#xE769;" ToolTip="停止播放" Click="BtnRecordStopPlay_Click" IsEnabled="False"/>
+                            <Separator/>
+                            <Button x:Name="BtnRecordSave" Style="{DynamicResource ToolBarIconButton}" Content="&#xE74E;" ToolTip="保存" Click="BtnRecordSave_Click"/>
+                            <Button x:Name="BtnRecordOpen" Style="{DynamicResource ToolBarIconButton}" Content="&#xE8E5;" ToolTip="加载" Click="BtnRecordOpen_Click"/>
+                            <Button x:Name="BtnRecordDelete" Style="{DynamicResource ToolBarIconButton}" Content="&#xE74D;" ToolTip="删除" Click="Button_Click_9"/>
+                            <Separator/>
+                            <Button x:Name="BtnRecordExport" Style="{DynamicResource ToolBarIconButton}" Content="&#xE943;" ToolTip="导出为脚本" Click="BtnRecordExport_Click"/>
+                        </ToolBar>
                         <TextBlock x:Name="RecordStatusLabel" Opacity="0.72" Margin="0,2,0,0"/>
                     </StackPanel>
                     <Grid Grid.Row="2" Margin="0,10,0,0">
@@ -311,28 +314,24 @@
                 <Grid Background="{DynamicResource backgroundColor1}" Margin="10,8">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="140"/>
+                        <RowDefinition Height="Auto" MinHeight="39"/>
+                        <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <Grid>
                         <Label Content="脚本" FontSize="23" FontWeight="Light"/>
                         <TextBlock x:Name="TxtScriptTrustStatus" HorizontalAlignment="Right" VerticalAlignment="Center" Opacity="0.72"/>
                     </Grid>
-                    <Border Grid.Row="1" BorderThickness="1" BorderBrush="{DynamicResource ButtonBorderColor}" CornerRadius="4" Padding="6" Margin="0,6,0,0">
-                        <TextBox x:Name="TxtScriptEditor" AcceptsReturn="True" AcceptsTab="True" TextWrapping="NoWrap" BorderThickness="0"
-                                 Background="Transparent" FontFamily="Consolas" FontSize="13" InputMethod.IsInputMethodEnabled="False"
-                                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"/>
-                    </Border>
-                    <WrapPanel Grid.Row="2" Margin="0,8,0,0" Orientation="Horizontal">
-                        <Button x:Name="BtnScriptRun" Style="{DynamicResource DefaultButton}" Content="运行" Height="36" Width="100" Margin="0,0,8,8" Click="BtnScriptRun_Click"/>
-                        <Button x:Name="BtnScriptSave" Style="{DynamicResource DefaultButton}" Content="保存脚本" Height="36" Width="100" Margin="0,0,8,8" Click="BtnScriptSave_Click"/>
-                        <Button x:Name="BtnScriptOpen" Style="{DynamicResource DefaultButton}" Content="加载脚本" Height="36" Width="100" Margin="0,0,8,8" Click="BtnScriptOpen_Click"/>
-                        <Button x:Name="BtnScriptClear" Style="{DynamicResource DefaultButton}" Content="清空" Height="36" Width="80" Margin="0,0,8,8" Click="BtnScriptClear_Click"/>
-                        <Button x:Name="BtnScriptHelp" Style="{DynamicResource DefaultButton}" Content="帮助" Height="36" Width="80" Margin="0,0,8,8" Click="BtnScriptHelp_Click"/>
-                        <Button x:Name="BtnScriptClearTrust" Style="{DynamicResource DefaultButton}" Content="清空信任列表" Height="36" Width="120" Margin="0,0,8,8" Click="BtnScriptClearTrust_Click"/>
-                    </WrapPanel>
-                    <Border Grid.Row="3" BorderThickness="1" BorderBrush="{DynamicResource ButtonBorderColor}" CornerRadius="4" Padding="6" Margin="0,8,0,0">
+                    <ToolBar Grid.Row="1" Style="{DynamicResource ToolBarStyle}" Margin="0,8,0,0" Width="185">
+                        <Button x:Name="BtnScriptRun" Style="{DynamicResource ToolBarIconButton}" Content="&#xE768;" ToolTip="运行" Click="BtnScriptRun_Click"/>
+                        <Button x:Name="BtnScriptOpen" Style="{DynamicResource ToolBarIconButton}" Content="&#xE8E5;" ToolTip="加载脚本" Click="BtnScriptOpen_Click"/>
+                        <Separator/>
+                        <Button x:Name="BtnScriptClear" Style="{DynamicResource ToolBarIconButton}" Content="&#xE894;" ToolTip="关闭脚本" Click="BtnScriptClear_Click"/>
+                        <Button x:Name="BtnScriptHelp" Style="{DynamicResource ToolBarIconButton}" Content="&#xE897;" ToolTip="帮助" Click="BtnScriptHelp_Click"/>
+                        <Button x:Name="BtnScriptClearTrust" Style="{DynamicResource ToolBarIconButton}" Content="&#xE74D;" ToolTip="清空信任列表" Click="BtnScriptClearTrust_Click"/>
+                    </ToolBar>
+                    <Label Content="运行日志" Grid.Row="2" Margin="0,8,0,0"/>
+                        <Border Grid.Row="3" BorderThickness="1" BorderBrush="{DynamicResource ButtonBorderColor}" CornerRadius="4" Padding="6" Margin="0,8,0,0">
                         <TextBox x:Name="TxtScriptOutput" IsReadOnly="True" BorderThickness="0" Background="Transparent"
                                  FontFamily="Consolas" FontSize="12" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"/>
                     </Border>
@@ -347,13 +346,13 @@
                     <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel Margin="10,8,16,12">
                             <TextBlock Text="行为" FontSize="23" FontWeight="Light"/>
-							<StackPanel Orientation="Horizontal">
-								<CheckBox x:Name="DoAutoStartCheckbox" Content="开机自启动" Margin="8,10,0,0"/>
-								<ComboBox x:Name="DoRegisterAutoStartTaskComboBox" Width="100" Margin="20,10,0,0" Style="{DynamicResource comboboxStyle}">
-									<ComboBoxItem Content="注册为计划任务(高优先级)"/>
-									<ComboBoxItem Content="写入注册表中开机启动项(推荐)"/>
-								</ComboBox>
-							</StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <CheckBox x:Name="DoAutoStartCheckbox" Content="开机自启动" Margin="8,10,0,0"/>
+                                <ComboBox x:Name="DoRegisterAutoStartTaskComboBox" Width="200" Margin="20,10,0,0" Style="{DynamicResource comboboxStyle}">
+                                    <ComboBoxItem Content="高优先级自启（需要管理员权限）"/>
+                                    <ComboBoxItem Content="当前用户自启"/>
+                                </ComboBox>
+                            </StackPanel>
                             <Grid Margin="8,12,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>

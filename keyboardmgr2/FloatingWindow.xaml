@@ -20,12 +20,12 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="40"/>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="44"/>
-                <ColumnDefinition Width="44"/>
-                <ColumnDefinition Width="44"/>
-                <ColumnDefinition Width="44"/>
-                <ColumnDefinition Width="44"/>
-                <ColumnDefinition Width="44"/>
+                <ColumnDefinition Width="auto"/>
+                <ColumnDefinition Width="auto"/>
+                <ColumnDefinition Width="auto"/>
+                <ColumnDefinition Width="auto"/>
+                <ColumnDefinition Width="auto"/>
+                <ColumnDefinition Width="auto"/>
             </Grid.ColumnDefinitions>
 
             <Image Margin="1,2" Source="/appiconnew.ico" MouseUp="Image_MouseUp"/>
@@ -49,7 +49,7 @@
             <Button x:Name="stopButton" Grid.Column="6" Style="{DynamicResource DefaultButton}"
                     FontFamily="{DynamicResource iconFont}" FontSize="18" Content="{DynamicResource Icon.Stop}"
                     Height="40" Width="40" Click="StopButton_Click" BorderBrush="{x:Null}"
-                    Visibility="Hidden" Background="{x:Null}"/>
+                    Visibility="Collapsed" Background="{x:Null}"/>
             <Button Grid.Column="7" Style="{DynamicResource DefaultButton}"
                     FontFamily="{DynamicResource iconFont}" FontSize="18" Content="{DynamicResource Icon.Close}"
                     Height="40" Width="40" Click="Button_Click" BorderBrush="{x:Null}" Background="{x:Null}"/>

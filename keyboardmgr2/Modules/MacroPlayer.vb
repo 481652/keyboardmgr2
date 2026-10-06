@@ -85,24 +85,13 @@ Module MacroPlayer
             Case KbmrEventKind.MouseMove
                 OpEngine.MouseMove(item.X, item.Y)
             Case KbmrEventKind.Wheel
-                UserInputHandler.mouse_event(UserInputHandler.MOUSEEVENTF_WHEEL, 0, 0, item.Delta, 0)
+                UserInputHandler.SendMouseWheelInput(item.Delta)
         End Select
     End Sub
 
     Private Sub MouseButtonEvent(button As Byte, down As Boolean, x As Integer, y As Integer)
         If (button = 1 OrElse button = 2 OrElse button = 3) AndAlso x >= 0 AndAlso y >= 0 Then OpEngine.MouseMove(x, y)
-        Select Case button
-            Case 1
-                UserInputHandler.mouse_event(If(down, UserInputHandler.MOUSEEVENTF_LEFTDOWN, UserInputHandler.MOUSEEVENTF_LEFTUP), 0, 0, 0, 0)
-            Case 2
-                UserInputHandler.mouse_event(If(down, UserInputHandler.MOUSEEVENTF_RIGHTDOWN, UserInputHandler.MOUSEEVENTF_RIGHTUP), 0, 0, 0, 0)
-            Case 3
-                UserInputHandler.mouse_event(If(down, UserInputHandler.MOUSEEVENTF_MIDDLEDOWN, UserInputHandler.MOUSEEVENTF_MIDDLEUP), 0, 0, 0, 0)
-            Case 4
-                UserInputHandler.mouse_event(If(down, UserInputHandler.MOUSEEVENTF_XDOWN, UserInputHandler.MOUSEEVENTF_XUP), 0, 0, 1, 0)
-            Case 5
-                UserInputHandler.mouse_event(If(down, UserInputHandler.MOUSEEVENTF_XDOWN, UserInputHandler.MOUSEEVENTF_XUP), 0, 0, 2, 0)
-        End Select
+        UserInputHandler.SendMouseButtonInput(CInt(button), down)
     End Sub
 
     '将相邻采样点之间的鼠标移动线性插值为若干中间点，使低采样频率下的回放更平滑。

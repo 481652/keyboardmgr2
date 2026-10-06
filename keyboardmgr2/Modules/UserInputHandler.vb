@@ -55,16 +55,11 @@ Module UserInputHandler
 
 
 
-    '模拟winform里的sendkeys,使用keybd_event函数
+    '模拟winform里的sendkeys，统一改用 SendInput 注入键盘事件
 #Region "Sendkeys"
 
-    <DllImport("user32.dll", SetLastError:=True)>
-    Private Sub keybd_event(bVk As Byte, bScan As Byte, dwFlags As UInteger, dwExtraInfo As UInteger)
-    End Sub
-
     Public Sub SendKey(key As Byte, isPress As Boolean)
-        Dim flags As UInteger = If(isPress, 0, &H2) ' &H2 表示 KEYEVENTF_KEYUP
-        keybd_event(key, 0, flags, 0)
+        SendVirtualKeyInput(CUShort(key), isPress)
     End Sub
 
     Public Sub SendKeyCombination(keys As List(Of UShort))
@@ -207,6 +202,57 @@ Module UserInputHandler
         Dim keyUp As Input = keyDown
         keyUp.Data.Keyboard.Flags = KEYEVENTF_KEYUP
         inputList.Add(keyUp)
+    End Sub
+
+    '统一使用 SendInput 注入键鼠事件（录制回放与脚本回放共用）
+    Public Sub SendVirtualKeyInput(vk As UShort, down As Boolean)
+        Const INPUT_KEYBOARD As UInteger = 1
+        Const KEYEVENTF_KEYUP As UInteger = &H2
+        Dim item As New Input With {.Type = INPUT_KEYBOARD}
+        item.Data.Keyboard.VirtualKey = vk
+        If Not down Then item.Data.Keyboard.Flags = KEYEVENTF_KEYUP
+        SendInputRaw({item})
+    End Sub
+
+    '通过 SendInput 注入鼠标按键（1=左 2=右 3=中 4=侧键1 5=侧键2）
+    Public Sub SendMouseButtonInput(button As Integer, down As Boolean)
+        Const INPUT_MOUSE As UInteger = 0
+        Dim flag As UInteger
+        Dim data As UInteger = 0
+        Select Case button
+            Case 1
+                flag = CUInt(If(down, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP))
+            Case 2
+                flag = CUInt(If(down, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP))
+            Case 3
+                flag = CUInt(If(down, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP))
+            Case 4
+                flag = CUInt(If(down, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP))
+                data = 1UI
+            Case 5
+                flag = CUInt(If(down, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP))
+                data = 2UI
+            Case Else
+                Return
+        End Select
+        Dim item As New Input With {.Type = INPUT_MOUSE}
+        item.Data.Mouse.Flags = flag
+        item.Data.Mouse.MouseData = data
+        SendInputRaw({item})
+    End Sub
+
+    '通过 SendInput 注入滚轮事件，delta 为滚轮格数 * 120（向前为正、向后为负）
+    Public Sub SendMouseWheelInput(delta As Integer)
+        Const INPUT_MOUSE As UInteger = 0
+        Dim item As New Input With {.Type = INPUT_MOUSE}
+        item.Data.Mouse.Flags = MOUSEEVENTF_WHEEL
+        item.Data.Mouse.MouseData = CUInt(CLng(delta) And &HFFFFFFFFL)
+        SendInputRaw({item})
+    End Sub
+
+    Private Sub SendInputRaw(items() As Input)
+        If items Is Nothing OrElse items.Length = 0 Then Return
+        SendInput(CUInt(items.Length), items, Marshal.SizeOf(GetType(Input)))
     End Sub
 
     '连发“发送键”：Enter 或 Shift+Enter（Shift 按住期间发送 Enter）
@@ -554,8 +600,7 @@ Module UserInputHandler
 
     '连点相关声明
 #Region "MouseInput"
-    '此段内容（连点）可以复用，因此完全由老版本移植上来
-    Declare Sub mouse_event Lib "user32" (dwFlags As Long, dx As Long, dy As Long, cButtons As Long, dwExtraInfo As Long)
+    '鼠标事件标志（统一经 SendInput 注入）
     Public Const MOUSEEVENTF_LEFTDOWN = &H2 '模拟鼠标左键按下
     Public Const MOUSEEVENTF_LEFTUP = &H4 '模拟鼠标左键释放
     Public Const MOUSEEVENTF_RIGHTDOWN = &H8 '模拟鼠标右键按下

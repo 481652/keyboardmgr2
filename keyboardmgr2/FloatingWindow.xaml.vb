@@ -575,7 +575,7 @@ Public Class FloatingWindow
 
     Public Sub FloatingWindow_Reset()
         titleLabel.Content = "键鼠管家"
-        stopButton.Visibility = Visibility.Hidden
+        stopButton.Visibility = Visibility.Collapsed
         clickButton.Visibility = Visibility.Visible
         sendButton.Visibility = Visibility.Visible
     End Sub
@@ -583,8 +583,8 @@ Public Class FloatingWindow
     Public Sub FloatingWindowEvent_Send()
         titleLabel.Content = "键鼠管家-连发中"
         stopButton.Visibility = Visibility.Visible
-        clickButton.Visibility = Visibility.Hidden
-        sendButton.Visibility = Visibility.Hidden
+        clickButton.Visibility = Visibility.Collapsed
+        sendButton.Visibility = Visibility.Collapsed
         If FloatingWindowState <> 0 Then
             If Not IsVisible Then Show()
             Unfold()
@@ -594,8 +594,8 @@ Public Class FloatingWindow
     Public Sub FloatingWindowEvent_Click()
         titleLabel.Content = "键鼠管家-连点中"
         stopButton.Visibility = Visibility.Visible
-        clickButton.Visibility = Visibility.Hidden
-        sendButton.Visibility = Visibility.Hidden
+        clickButton.Visibility = Visibility.Collapsed
+        sendButton.Visibility = Visibility.Collapsed
         If FloatingWindowState <> 0 Then Unfold()
         RegisterGlobalHotkey(stopActHotkeys, 9000)
     End Sub

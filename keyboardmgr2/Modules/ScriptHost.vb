@@ -76,7 +76,7 @@ Public Class ScriptHost
     Public Function Wheel(delta As Integer) As Boolean
         If delta < -12000 Then delta = -12000
         If delta > 12000 Then delta = 12000
-        UserInputHandler.mouse_event(UserInputHandler.MOUSEEVENTF_WHEEL, 0, 0, delta, 0)
+        UserInputHandler.SendMouseWheelInput(delta)
         Return True
     End Function
 
@@ -159,18 +159,7 @@ Public Class ScriptHost
     End Function
 
     Private Sub SendMouseButton(button As Integer, down As Boolean)
-        Select Case button
-            Case 1
-                UserInputHandler.mouse_event(If(down, UserInputHandler.MOUSEEVENTF_LEFTDOWN, UserInputHandler.MOUSEEVENTF_LEFTUP), 0, 0, 0, 0)
-            Case 2
-                UserInputHandler.mouse_event(If(down, UserInputHandler.MOUSEEVENTF_RIGHTDOWN, UserInputHandler.MOUSEEVENTF_RIGHTUP), 0, 0, 0, 0)
-            Case 3
-                UserInputHandler.mouse_event(If(down, UserInputHandler.MOUSEEVENTF_MIDDLEDOWN, UserInputHandler.MOUSEEVENTF_MIDDLEUP), 0, 0, 0, 0)
-            Case 4
-                UserInputHandler.mouse_event(If(down, UserInputHandler.MOUSEEVENTF_XDOWN, UserInputHandler.MOUSEEVENTF_XUP), 0, 0, 1, 0)
-            Case 5
-                UserInputHandler.mouse_event(If(down, UserInputHandler.MOUSEEVENTF_XDOWN, UserInputHandler.MOUSEEVENTF_XUP), 0, 0, 2, 0)
-        End Select
+        UserInputHandler.SendMouseButtonInput(button, down)
     End Sub
 
 #End Region

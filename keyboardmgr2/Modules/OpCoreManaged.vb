@@ -1,4 +1,4 @@
-'兼容（托管）操作内核：旧版 System.Timers.Timer + mouse_event/keybd_event 实现，
+'兼容（托管）操作内核：System.Timers.Timer + SendInput 实现，
 '作为原生 OpCore DLL 不可用时的回退，提供键鼠操作与连点循环接口。
 '行为与旧版保持一致：鼠标连点支持随机速度/坐标偏移，键盘连点发送组合键。
 Imports System.Timers
@@ -58,11 +58,7 @@ Module OpCoreManaged
     Public Sub StartMouseHold(button As Integer)
         StopAll()
         heldMouseButton = button
-        If button = 2 Then
-            mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
-        Else
-            mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-        End If
+        SendMouseButtonInput(If(button = 2, 2, 1), True)
         isMouseHeld = True
     End Sub
 
@@ -93,11 +89,7 @@ Module OpCoreManaged
             isKeyboardHeld = False
         End If
         If isMouseHeld Then
-            If heldMouseButton = 2 Then
-                mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
-            Else
-                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-            End If
+            SendMouseButtonInput(If(heldMouseButton = 2, 2, 1), False)
             isMouseHeld = False
             heldMouseButton = 0
         End If
@@ -116,13 +108,8 @@ Module OpCoreManaged
             P.y = baseY + rnd.Next(-15, 16)
             SetCursorPosition(P.x, P.y)
         End If
-        If mouseButton = 2 Then
-            mouse_event(MOUSEEVENTF_RIGHTDOWN, P.x, P.y, 0, 0)
-            mouse_event(MOUSEEVENTF_RIGHTUP, P.x, P.y, 0, 0)
-        Else
-            mouse_event(MOUSEEVENTF_LEFTDOWN, P.x, P.y, 0, 0)
-            mouse_event(MOUSEEVENTF_LEFTUP, P.x, P.y, 0, 0)
-        End If
+        SendMouseButtonInput(mouseButton, True)
+        SendMouseButtonInput(mouseButton, False)
     End Sub
 
     Private Sub TimerKeys_Elapsed(sender As Object, e As ElapsedEventArgs)
@@ -146,13 +133,8 @@ Module OpCoreManaged
     Public Function MouseClick(button As Integer, x As Integer, y As Integer) As Boolean
         Try
             If x >= 0 AndAlso y >= 0 Then SetCursorPosition(x, y)
-            If button = 2 Then
-                mouse_event(MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
-                mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
-            Else
-                mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-            End If
+            SendMouseButtonInput(button, True)
+            SendMouseButtonInput(button, False)
             Return True
         Catch
             Return False

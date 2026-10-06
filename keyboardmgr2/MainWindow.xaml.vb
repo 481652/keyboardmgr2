@@ -1,4 +1,5 @@
 '主窗体代码
+Imports System.Globalization
 Imports System.IO
 Imports System.IO.Compression
 Imports System.Linq
@@ -92,6 +93,10 @@ Public Class MainWindow1
     End Function
 
     Dim savedkeys As New List(Of Key)
+
+    '窗口位置记忆：拖动/缩放后延迟保存，避免频繁写注册表；开机自启挪到屏幕外时不会被记录
+    Private ReadOnly windowPlacementTimer As New DispatcherTimer(DispatcherPriority.Background)
+    Private Const WindowPlacementSaveDelayMilliseconds As Integer = 800
 
 #End Region
 
@@ -523,7 +528,71 @@ Public Class MainWindow1
         InitializeTextBoxKeyHandler(KeyTextbox5)
         InitializeTextBoxKeyHandler(KeyTextbox6)
         InitializeTextBoxKeyHandler(KeyTextbox7)
+        windowPlacementTimer.Interval = TimeSpan.FromMilliseconds(WindowPlacementSaveDelayMilliseconds)
+        AddHandler windowPlacementTimer.Tick, AddressOf WindowPlacementTimer_Tick
+        AddHandler LocationChanged, AddressOf MainWindow_LocationOrSizeChanged
+        AddHandler SizeChanged, AddressOf MainWindow_LocationOrSizeChanged
+        RestoreWindowPlacement()
         _instance = Me
+    End Sub
+
+    '恢复上次保存的窗口位置与大小（位置不在任何屏幕内时忽略，回退到默认居中）
+    Public Sub RestoreWindowPlacement()
+        Dim savedLeft As Double
+        Dim savedTop As Double
+        Dim savedWidth As Double
+        Dim savedHeight As Double
+        If Not TryReadWindowPlacement(savedLeft, savedTop, savedWidth, savedHeight) Then Return
+        If savedWidth < MinWidth Then savedWidth = MinWidth
+        If savedHeight < MinHeight Then savedHeight = MinHeight
+        If Not IsWindowPlacementVisible(New System.Windows.Rect(savedLeft, savedTop, savedWidth, savedHeight)) Then Return
+        WindowStartupLocation = WindowStartupLocation.Manual
+        Me.Left = savedLeft
+        Me.Top = savedTop
+        Me.Width = savedWidth
+        Me.Height = savedHeight
+    End Sub
+
+    Private Function TryReadWindowPlacement(ByRef savedLeft As Double, ByRef savedTop As Double, ByRef savedWidth As Double, ByRef savedHeight As Double) As Boolean
+        Dim leftValue As Object = ReadSetting("MainWindowLeft", Nothing)
+        Dim topValue As Object = ReadSetting("MainWindowTop", Nothing)
+        Dim widthValue As Object = ReadSetting("MainWindowWidth", Nothing)
+        Dim heightValue As Object = ReadSetting("MainWindowHeight", Nothing)
+        If leftValue Is Nothing OrElse topValue Is Nothing OrElse widthValue Is Nothing OrElse heightValue Is Nothing Then Return False
+        Return Double.TryParse(leftValue.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, savedLeft) AndAlso
+               Double.TryParse(topValue.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, savedTop) AndAlso
+               Double.TryParse(widthValue.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, savedWidth) AndAlso
+               Double.TryParse(heightValue.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, savedHeight)
+    End Function
+
+    '标题栏至少要有一部分落在虚拟屏幕内，避免显示器变更后窗口停在屏幕外
+    Private Function IsWindowPlacementVisible(bounds As System.Windows.Rect) As Boolean
+        If bounds.Width <= 0 OrElse bounds.Height <= 0 Then Return False
+        Dim virtualScreen As New System.Windows.Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
+                                      SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight)
+        Dim titleBar As New System.Windows.Rect(bounds.Left, bounds.Top, Math.Min(bounds.Width, 120), Math.Min(bounds.Height, 30))
+        Return virtualScreen.IntersectsWith(titleBar)
+    End Function
+
+    Private Sub MainWindow_LocationOrSizeChanged(sender As Object, e As EventArgs)
+        windowPlacementTimer.Stop()
+        windowPlacementTimer.Start()
+    End Sub
+
+    Private Sub WindowPlacementTimer_Tick(sender As Object, e As EventArgs)
+        windowPlacementTimer.Stop()
+        SaveWindowPlacement()
+    End Sub
+
+    Private Sub SaveWindowPlacement()
+        Dim bounds As System.Windows.Rect = If(WindowState = WindowState.Normal,
+                                New System.Windows.Rect(Left, Top, ActualWidth, ActualHeight),
+                                RestoreBounds)
+        If bounds.IsEmpty OrElse Not IsWindowPlacementVisible(bounds) Then Return
+        WriteSetting("MainWindowLeft", bounds.Left.ToString(CultureInfo.InvariantCulture))
+        WriteSetting("MainWindowTop", bounds.Top.ToString(CultureInfo.InvariantCulture))
+        WriteSetting("MainWindowWidth", bounds.Width.ToString(CultureInfo.InvariantCulture))
+        WriteSetting("MainWindowHeight", bounds.Height.ToString(CultureInfo.InvariantCulture))
     End Sub
 
     '增加属性，方便访问
@@ -970,7 +1039,7 @@ Public Class MainWindow1
             isClicking = True
             Hide()
             floatingWindow.FloatingWindowEvent_Click()
-            '等待启动按钮自身的鼠标抬起事件完成，避免它立即释放模拟的长按。
+            '等待启动按钮自身的鼠标抬起事件完成，避免它立即释放模拟的长按
             Dispatcher.BeginInvoke(New Action(Sub() BeginMouseHoldCore(button)), DispatcherPriority.Background)
         ElseIf RadioButton1.IsChecked = True Then '左键连点
             OpEngine.StartMouseClick(intervalMs, speedOffset, posOffset, baseX, baseY, 1)
@@ -2123,7 +2192,6 @@ Public Class MainWindow1
 
     Private Sub BtnRecordExport_Click(sender As Object, e As RoutedEventArgs)
         If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then Return
-        TxtScriptEditor.Text = MacroScriptExporter.Generate(recordings(currentRecordingIndex))
         currentScriptPath = ""
         currentScriptHash = ""
         currentScriptTrusted = False
@@ -2152,6 +2220,7 @@ Public Class MainWindow1
     Private currentScriptPath As String = ""
     Private currentScriptHash As String = ""
     Private currentScriptTrusted As Boolean = False
+    Private scriptContent As String = ""
 
     Private Sub InitializeScriptSettings()
         TxtScriptOutput.Text = ""
@@ -2159,15 +2228,15 @@ Public Class MainWindow1
         UpdateScriptButtons()
     End Sub
 
-    Private Sub BtnScriptRun_Click(sender As Object, e As RoutedEventArgs)
+    Private Sub BtnScriptRun_Click(sender As Object, e As RoutedEventArgs) '脚本改成加载脚本，不要编辑器
         If ScriptRunner.IsRunning Then
             ScriptRunner.StopScript()
             Return
         End If
-        Dim code As String = TxtScriptEditor.Text
+        Dim code As String = scriptContent
         If String.IsNullOrWhiteSpace(code) Then
-            ShowMyMessage("脚本内容为空。")
-            Return
+            ShowMyMessage("请先加载脚本。")
+        Return
         End If
         Dim analysis As ScriptAnalysisResult = ScriptSecurity.Analyze(code)
         If analysis.SyntaxErrors.Count > 0 Then
@@ -2181,6 +2250,7 @@ Public Class MainWindow1
         currentScriptHash = hash
         currentScriptTrusted = ScriptSecurity.IsTrusted(hash)
         AppendScriptOutput("=== 开始运行脚本 " & DateTime.Now.ToString("HH:mm:ss") & " ===")
+        Hide()
         ScriptRunner.RunScript(code)
     End Sub
 
@@ -2193,32 +2263,6 @@ Public Class MainWindow1
         End If
         Return dialog.Allowed
     End Function
-
-    Private Sub BtnScriptSave_Click(sender As Object, e As RoutedEventArgs)
-        If String.IsNullOrWhiteSpace(TxtScriptEditor.Text) Then
-            ShowMyMessage("脚本内容为空。")
-            Return
-        End If
-        Dim dialog As New SaveFileDialog With {
-            .Title = "保存脚本",
-            .Filter = "PowerShell 脚本 (*.ps1)|*.ps1|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
-            .DefaultExt = ".ps1",
-            .AddExtension = True,
-            .OverwritePrompt = True,
-            .FileName = "脚本"
-        }
-        If dialog.ShowDialog(Me) <> True Then Return
-        Try
-            File.WriteAllText(dialog.FileName, TxtScriptEditor.Text, New UTF8Encoding(True))
-            currentScriptPath = dialog.FileName
-            currentScriptHash = ScriptSecurity.ComputeFileHash(dialog.FileName)
-            currentScriptTrusted = ScriptSecurity.IsTrusted(currentScriptHash)
-            UpdateScriptTrustStatus()
-            ShowMyMessage("脚本已保存到文件。")
-        Catch ex As Exception
-            ShowMyMessage("无法保存脚本：" & ex.Message)
-        End Try
-    End Sub
 
     Private Sub BtnScriptOpen_Click(sender As Object, e As RoutedEventArgs)
         Dim dialog As New OpenFileDialog With {
@@ -2241,7 +2285,7 @@ Public Class MainWindow1
             If analysis.SyntaxErrors.Count > 0 Then
                 ShowMyMessage("警告：脚本存在语法错误，已加载但无法运行：" & vbCrLf & String.Join(vbCrLf, analysis.SyntaxErrors.Take(5)))
             End If
-            TxtScriptEditor.Text = code
+            scriptContent = code
             currentScriptPath = dialog.FileName
             currentScriptHash = hash
             currentScriptTrusted = ScriptSecurity.IsTrusted(hash)
@@ -2253,10 +2297,11 @@ Public Class MainWindow1
     End Sub
 
     Private Sub BtnScriptClear_Click(sender As Object, e As RoutedEventArgs)
-        TxtScriptEditor.Clear()
         currentScriptPath = ""
         currentScriptHash = ""
         currentScriptTrusted = False
+        scriptContent = ""
+        TxtScriptOutput.Clear()
         UpdateScriptTrustStatus()
     End Sub
 
@@ -2323,13 +2368,14 @@ Public Class MainWindow1
 
     Private Sub UpdateScriptButtons()
         If ScriptRunner.IsRunning Then
-            BtnScriptRun.Content = "停止运行"
+            BtnScriptRun.Content = ChrW(&HE71A)
+            BtnScriptRun.ToolTip = "停止运行"
             TxtScriptTrustStatus.Text = "运行中……"
         Else
-            BtnScriptRun.Content = "运行"
+            BtnScriptRun.Content = ChrW(&HE768)
+            BtnScriptRun.ToolTip = "运行"
             UpdateScriptTrustStatus()
         End If
-        BtnScriptSave.IsEnabled = Not ScriptRunner.IsRunning
         BtnScriptOpen.IsEnabled = Not ScriptRunner.IsRunning
         BtnScriptClear.IsEnabled = Not ScriptRunner.IsRunning
         BtnScriptClearTrust.IsEnabled = Not ScriptRunner.IsRunning

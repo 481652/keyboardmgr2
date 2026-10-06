@@ -96,7 +96,10 @@ Class Application
             window.ShowActivated = savedShowActivated
             window.ShowInTaskbar = savedShowInTaskbar
             window.WindowStartupLocation = savedStartupLocation
-            If savedStartupLocation <> WindowStartupLocation.Manual Then
+            If savedStartupLocation = WindowStartupLocation.Manual Then
+                '记忆了窗口位置：重新套用保存的位置，而不是让它停在屏幕外
+                window.RestoreWindowPlacement()
+            Else
                 '本来就是 CenterScreen：显式算好居中位置，免得下次从托盘显示时窗口还在屏幕外
                 window.Left = SystemParameters.WorkArea.Left + Math.Max(0, (SystemParameters.WorkArea.Width - window.ActualWidth) / 2)
                 window.Top = SystemParameters.WorkArea.Top + Math.Max(0, (SystemParameters.WorkArea.Height - window.ActualHeight) / 2)
