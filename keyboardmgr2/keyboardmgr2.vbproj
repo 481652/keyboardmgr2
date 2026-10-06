@@ -111,6 +111,9 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="ClipboardWindow.xaml.vb">
+      <DependentUpon>ClipboardWindow.xaml</DependentUpon>
+    </Compile>
     <Compile Include="FloatingWindow.xaml.vb">
       <DependentUpon>FloatingWindow.xaml</DependentUpon>
     </Compile>
@@ -118,6 +121,7 @@
     <Compile Include="HelpWindow.xaml.vb">
       <DependentUpon>HelpWindow.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Modules\LaunchOnSetupModule.vb" />
     <Compile Include="Modules\OpCoreManaged.vb" />
     <Compile Include="Modules\OpCoreNative.vb" />
     <Compile Include="Modules\OpEngine.vb" />
@@ -146,6 +150,10 @@
     <Compile Include="MyMsgbox.xaml.vb">
       <DependentUpon>MyMsgbox.xaml</DependentUpon>
     </Compile>
+    <Page Include="ClipboardWindow.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Compile Include="ScriptSecurityWindow.xaml.vb">
       <DependentUpon>ScriptSecurityWindow.xaml</DependentUpon>
     </Compile>
@@ -269,6 +277,17 @@
       <Project>{370A051A-B965-4DED-97C8-EF0BF9A50214}</Project>
       <Name>LCSWindowSelector</Name>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <COMReference Include="IWshRuntimeLibrary">
+      <Guid>{F935DC20-1CF0-11D0-ADB9-00C04FD58A0B}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>False</Isolated>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </COMReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.VisualBasic.targets" />
   <Import Project="packages\Microsoft.Web.WebView2.1.0.2903.40\build\Microsoft.Web.WebView2.targets" Condition="Exists('packages\Microsoft.Web.WebView2.1.0.2903.40\build\Microsoft.Web.WebView2.targets')" />

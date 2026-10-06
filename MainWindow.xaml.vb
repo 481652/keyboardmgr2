@@ -1,4 +1,4 @@
-'主窗体代码
+﻿'主窗体代码
 Imports System.IO
 Imports System.IO.Compression
 Imports System.Linq
@@ -7,12 +7,14 @@ Imports System.Runtime.InteropServices
 Imports System.Text
 Imports System.Text.RegularExpressions
 Imports System.Threading
+Imports System.Timers
 Imports System.Windows.Interop
 Imports System.Windows.Media
 Imports System.Windows.Media.Animation
 Imports System.Windows.Threading
 Imports Microsoft.Win32
 Imports WindowSelector
+Imports Timer = System.Timers.Timer
 
 
 
@@ -47,48 +49,6 @@ Public Class MainWindow1
 
     <DllImport("user32.dll")>
     Private Shared Function GetWindowThreadProcessId(hWnd As IntPtr, ByRef processId As UInteger) As UInteger
-    End Function
-
-    <DllImport("user32.dll")>
-    Private Shared Function IsIconic(hWnd As IntPtr) As Boolean
-    End Function
-
-    <DllImport("user32.dll")>
-    Private Shared Function ShowWindowAsync(hWnd As IntPtr, nCmdShow As Integer) As Boolean
-    End Function
-
-    <DllImport("user32.dll")>
-    Private Shared Function BringWindowToTop(hWnd As IntPtr) As Boolean
-    End Function
-
-    <StructLayout(LayoutKind.Sequential)>
-    Private Structure RECT
-        Public Left As Integer
-        Public Top As Integer
-        Public Right As Integer
-        Public Bottom As Integer
-    End Structure
-
-    <DllImport("user32.dll")>
-    Private Shared Function GetWindowRect(hWnd As IntPtr, ByRef lpRect As RECT) As Boolean
-    End Function
-
-    Private Const SW_RESTORE As Integer = 9
-
-    '尝试把目标窗口激活到前台（最小化时先还原），返回最终是否处于前台
-    Private Function TryActivateWindow(hwnd As IntPtr) As Boolean
-        If hwnd = IntPtr.Zero OrElse Not IsWindow(hwnd) Then Return False
-        Try
-            If IsIconic(hwnd) Then ShowWindowAsync(hwnd, SW_RESTORE)
-            For attempt As Integer = 1 To 4
-                If GetForegroundWindow() = hwnd Then Return True
-                SetForegroundWindow(hwnd)
-                BringWindowToTop(hwnd)
-                Threading.Thread.Sleep(60)
-            Next
-        Catch
-        End Try
-        Return GetForegroundWindow() = hwnd
     End Function
 
     Dim savedkeys As New List(Of Key)
@@ -189,40 +149,18 @@ Public Class MainWindow1
         InitializeFloatingWindowSettings()
         InitializeLoafSettings()
         InitializeClickSettings()
-        InitializeOpCoreSettings()
         InitializeHotkeySettings()
-        InitializeRecordSettings()
-        InitializeScriptSettings()
         UpdateItemDisplay()
         ApplyStartupTabSelection()
-        '开机自启有两种方式且互斥：计划任务（登录时提权启动）优先于注册表启动项。
-        '两者同时存在会导致登录时启动两次，先启动的未提权实例会抢占单实例，导致提权的那份直接退出。
-        Dim useTaskMode As Boolean = ReadSetting("DoRegisterAutoStartTask", 0) = 1
-        Dim useRunKeyMode As Boolean = ReadSetting("DoAutoStart", 0) = 1
-        If useTaskMode Then
+        If ReadSetting("DoAutoStart", 0) = 1 Then
             DoAutoStartCheckbox.IsChecked = True
-            DoRegisterAutoStartTaskComboBox.SelectedIndex = 0
-            If useRunKeyMode Then
-                '清理历史遗留的重复注册
-                WriteSetting("DoAutoStart", 0)
-            End If
-            Try
-                UpdateAutoStartRegistration(False)
-            Catch
-            End Try
-            '只有任务确实缺失/过期时才会请求提权，正常情况下这里什么都不做
-            LaunchOnSetupModule.EnsureTaskRegistered()
-        ElseIf useRunKeyMode Then
-            DoAutoStartCheckbox.IsChecked = True
-            DoRegisterAutoStartTaskComboBox.SelectedIndex = 1
             Try
                 UpdateAutoStartRegistration(True)
             Catch
-                MessageBox.Show("注册开机启动项失败。", "失败", MessageBoxButton.OK, MessageBoxImage.Error)
+                '旧版自启项迁移失败不应阻止程序启动，用户应用设置时会看到错误。
             End Try
         Else
             DoAutoStartCheckbox.IsChecked = False
-            DoRegisterAutoStartTaskComboBox.SelectedIndex = 1
         End If
     End Sub
 
@@ -320,38 +258,13 @@ Public Class MainWindow1
                     ShowMyMessage("加载连点模式时失败！")
             End Select
             KeyTextbox1.Text = ReadSetting("ClickKeys", "")
-            '加载自定义键连点键值（空键值属于正常默认状态，不提示）
+            '加载自定义键连点键值
             Dim ClickKeys_str = ReadSetting("ClickKeys", "")
             savedkeys = LoadKeyData(ClickKeys_str)
-            If ClickKeys_str <> "" AndAlso IsNoneKeyList(savedkeys) Then
+            If IsNoneKeyList(savedkeys) Then
                 ShowMyMessage("无法加载连点设置。")
             End If
         End If
-    End Sub
-
-    Private Sub InitializeOpCoreSettings()
-        '迁移旧版“连点内核”设置键到“操作内核”
-        If ReadSetting("OpCoreEngine", -1).Equals(-1) Then
-            WriteSetting("OpCoreEngine", ReadSetting("ClickCoreEngine", 0))
-            DeleteSetting("ClickCoreEngine")
-        End If
-
-        '加载操作内核选项、连发发送键与发送方式选项，并初始化操作内核分发层
-        Dim engineMode As Integer = 0
-        If Not Integer.TryParse(ReadSetting("OpCoreEngine", 0).ToString(), engineMode) OrElse engineMode < 0 OrElse engineMode > 2 Then engineMode = 0
-        Combobox3.SelectedIndex = engineMode
-
-        Dim sendKey As Integer = 0
-        If Not Integer.TryParse(ReadSetting("RapidFireSendKey", 0).ToString(), sendKey) OrElse sendKey < 0 OrElse sendKey > 1 Then sendKey = 0
-        Combobox4.SelectedIndex = sendKey
-        rapidFireSendKey = sendKey
-
-        Dim sendMethod As Integer = 0
-        If Not Integer.TryParse(ReadSetting("RapidFireSendMethod", 0).ToString(), sendMethod) OrElse sendMethod < 0 OrElse sendMethod > 2 Then sendMethod = 0
-        Combobox5.SelectedIndex = sendMethod
-        rapidFireSendMethod = sendMethod
-
-        OpEngine.Initialize()
     End Sub
 
     Private Sub InitializeHotkeySettings()
@@ -429,21 +342,6 @@ Public Class MainWindow1
                 ShowMyMessage("无法加载主界面显示快捷键设置。")
             End If
         End If
-        '加载录制开关热键
-        Dim recordHotkeyStr As String = ReplaceReservedHotkey("RecordHotkeys", "Ctrl+F4", reservedHotkeyReplaced)
-        If recordHotkeyStr <> "" Then
-            KeyTextbox7.Text = recordHotkeyStr
-            Dim keyList = LoadKeyData(recordHotkeyStr)
-            recordHotkeys = ConvertKeyLogToVirtualKeyCodes(keyList)
-            If IsNoneKeyList(keyList) Then
-                ShowMyMessage("无法加载录制快捷键设置。")
-            End If
-        Else
-            recordHotkeyStr = "Ctrl+F4"
-            WriteSetting("RecordHotkeys", recordHotkeyStr)
-            KeyTextbox7.Text = recordHotkeyStr
-            recordHotkeys = ConvertKeyLogToVirtualKeyCodes(LoadKeyData(recordHotkeyStr))
-        End If
         If reservedHotkeyReplaced Then
             ShowMyMessage("检测到设置中包含系统常用快捷键，已自动恢复为对应的默认快捷键。")
         End If
@@ -469,10 +367,6 @@ Public Class MainWindow1
         End If
         If toggleMainWindowHotkeys.Count > 0 Then
             floatingWindow.RegisterGlobalHotkey(toggleMainWindowHotkeys, 9004)
-        End If
-        '注册录制开关热键
-        If recordHotkeys.Count > 0 Then
-            floatingWindow.RegisterGlobalHotkey(recordHotkeys, 9005)
         End If
     End Sub
 
@@ -513,16 +407,12 @@ Public Class MainWindow1
         AddHandler sendCompletionTimer.Tick, AddressOf SendCompletionTimer_Tick
         AddHandler imagePasteTimer.Tick, AddressOf ImagePasteTimer_Tick
         AddHandler SystemEvents.UserPreferenceChanged, AddressOf OnUserPreferenceChanged
-        AddHandler MacroPlayer.PlaybackStopped, AddressOf MacroPlayer_PlaybackStopped
-        AddHandler ScriptRunner.OutputReceived, AddressOf ScriptRunner_OutputReceived
-        AddHandler ScriptRunner.StateChanged, AddressOf ScriptRunner_StateChanged
         InitializeTextBoxKeyHandler(KeyTextbox1)
         InitializeTextBoxKeyHandler(KeyTextbox2)
         InitializeTextBoxKeyHandler(KeyTextbox3)
         InitializeTextBoxKeyHandler(KeyTextbox4)
         InitializeTextBoxKeyHandler(KeyTextbox5)
         InitializeTextBoxKeyHandler(KeyTextbox6)
-        InitializeTextBoxKeyHandler(KeyTextbox7)
         _instance = Me
     End Sub
 
@@ -612,18 +502,6 @@ Public Class MainWindow1
         If KeyTextbox6.Text <> "" Then
             WriteSetting("ToggleMainWindowHotkeys", KeyTextbox6.Text)
         End If
-        '保存录制开关热键
-        If KeyTextbox7.Text <> "" Then
-            WriteSetting("RecordHotkeys", KeyTextbox7.Text)
-        End If
-        '保存录制选项
-        Dim recordSampleRate As Integer
-        If Integer.TryParse(TxtRecordSampleRate.Text, recordSampleRate) AndAlso recordSampleRate >= 1 AndAlso recordSampleRate <= 1000 Then
-            WriteSetting("RecordSampleRateMs", recordSampleRate)
-        End If
-        WriteSetting("RecordPlaybackSmooth", If(ChkPlaybackSmooth.IsChecked, 1, 0))
-        WriteSetting("RecordPlaybackLoop", If(ChkPlaybackLoop.IsChecked, 1, 0))
-        WriteSetting("RecordPlaybackBlockInput", If(ChkPlaybackBlockInput.IsChecked, 1, 0))
         If StartupTabComboBox.SelectedIndex < 0 OrElse StartupTabComboBox.SelectedIndex >= TabControl1.Items.Count Then
             ShowMyMessage("无法保存设置：请选择程序启动时显示的选项卡。")
             Return
@@ -636,77 +514,23 @@ Public Class MainWindow1
             WriteSetting("IsMicaEnabled", 0)
             ThemeModule.isMicaEnabled = False
         End If
-        '检测开机自启（两种方式互斥：计划任务 / 注册表启动项，避免登录时启动两次）
+        '检测开机自启
         Try
             If DoAutoStartCheckbox.IsChecked = True Then
-                Select Case DoRegisterAutoStartTaskComboBox.SelectedIndex
-                    Case 0
-                        '计划任务方式：登录时以最高权限启动，同时清掉注册表启动项
-                        WriteSetting("DoRegisterAutoStartTask", 1)
-                        WriteSetting("DoAutoStart", 0)
-                        UpdateAutoStartRegistration(False)
-                        If LaunchOnSetupModule.IsRunningAsAdministrator() Then
-                            LaunchOnSetupModule.RegisterTask()
-                        Else
-                            '交由提权后的新实例执行（带 --task=register）
-                            LaunchOnSetupModule.RestartToRequestAdmin("register")
-                        End If
-                    Case 1
-                        '注册表启动项方式：写完启动项后清掉可能存在的计划任务
-                        WriteSetting("DoAutoStart", 1)
-                        WriteSetting("DoRegisterAutoStartTask", 0)
-                        UpdateAutoStartRegistration(True)
-                        If LaunchOnSetupModule.TaskExists() Then
-                            If LaunchOnSetupModule.IsRunningAsAdministrator() Then
-                                LaunchOnSetupModule.EraseTask()
-                            Else
-                                LaunchOnSetupModule.RestartToRequestAdmin("delete")
-                            End If
-                        End If
-                End Select
+                WriteSetting("DoAutoStart", 1)
+                UpdateAutoStartRegistration(True)
             Else
                 WriteSetting("DoAutoStart", 0)
-                WriteSetting("DoRegisterAutoStartTask", 0)
-                '先完成不需要提权的清理，需要时才重启提权删除计划任务
                 UpdateAutoStartRegistration(False)
-                If LaunchOnSetupModule.TaskExists() Then
-                    If LaunchOnSetupModule.IsRunningAsAdministrator() Then
-                        LaunchOnSetupModule.EraseTask()
-                    Else
-                        LaunchOnSetupModule.RestartToRequestAdmin("delete")
-                    End If
-                End If
             End If
         Catch ex As Exception
             ShowMyMessage("设置开机自启出错，错误内容：" & ex.Message)
         End Try
-
-        '保存操作内核选项（立即生效）
-        If Combobox3.SelectedIndex < 0 OrElse Combobox3.SelectedIndex > 2 Then
-            ShowMyMessage("无法保存设置：请选择操作内核。")
-            Return
-        End If
-        WriteSetting("OpCoreEngine", Combobox3.SelectedIndex)
-        OpEngine.Initialize()
-        '保存连发发送键选项（立即生效）
-        If Combobox4.SelectedIndex < 0 OrElse Combobox4.SelectedIndex > 1 Then
-            ShowMyMessage("无法保存设置：请选择连发发送键。")
-            Return
-        End If
-        WriteSetting("RapidFireSendKey", Combobox4.SelectedIndex)
-        rapidFireSendKey = Combobox4.SelectedIndex
-        '保存连发发送方式选项（立即生效）
-        If Combobox5.SelectedIndex < 0 OrElse Combobox5.SelectedIndex > 2 Then
-            ShowMyMessage("无法保存设置：请选择连发发送方式。")
-            Return
-        End If
-        WriteSetting("RapidFireSendMethod", Combobox5.SelectedIndex)
-        rapidFireSendMethod = Combobox5.SelectedIndex
         ThemeModule.UpdateWindowBackdrops()
     End Sub
 
     Private Shared Sub UpdateAutoStartRegistration(enabled As Boolean)
-        Dim appPath As String = Process.GetCurrentProcess().MainModule.FileName
+        Dim appPath As String = System.Reflection.Assembly.GetExecutingAssembly().Location
         Using runKey As RegistryKey = Registry.CurrentUser.CreateSubKey("SOFTWARE\Microsoft\Windows\CurrentVersion\Run")
             If enabled Then
                 runKey.SetValue("keyboardmgr2", Chr(34) & appPath & Chr(34) & " --autostart")
@@ -714,7 +538,6 @@ Public Class MainWindow1
                 runKey.DeleteValue("keyboardmgr2")
             End If
         End Using
-        Debug.WriteLine("Auto-start registration updated: " & enabled.ToString())
     End Sub
     '检测热键冲突（内部：两个热键是否相同）
     Private Function CheckHotkeyConflict(key1 As String, key2 As String) As Boolean
@@ -727,8 +550,7 @@ Public Class MainWindow1
             Tuple.Create("终止任务快捷键", KeyTextbox3.Text),
             Tuple.Create("连点开关快捷键", KeyTextbox4.Text),
             Tuple.Create("连发开关快捷键", KeyTextbox5.Text),
-            Tuple.Create("主界面显示/隐藏快捷键", KeyTextbox6.Text),
-            Tuple.Create("录制开关快捷键", KeyTextbox7.Text)
+            Tuple.Create("主界面显示/隐藏快捷键", KeyTextbox6.Text)
         }
         For Each hotkey In hotkeys
             If IsReservedSystemHotkey(hotkey.Item2) Then Return hotkey.Item1
@@ -789,6 +611,11 @@ Public Class MainWindow1
                 WriteSetting("ClickKeys", KeyTextbox1.Text)
             Else
                 ShowMyMessage("无法保存设置：没有指定要连点的键")
+                Return
+            End If
+            If CheckBox4.IsChecked <> True AndAlso Textbox1.Text <= 50 Then
+                ShowMyMessage("无法保存设置：键盘按键连点需要发送间隔大于50！")
+                Textbox1.Text = 60
                 Return
             End If
         Else
@@ -886,9 +713,22 @@ Public Class MainWindow1
         e.Handled = True
     End Sub
 
+    Dim sendKeys As New List(Of UShort) From {}
+    Dim numberofKeys As Short
+    Dim key1 As UShort
+    Dim clickTime As Integer = 10
+    Dim isSpeedRandomOffset As Boolean = False
+    Dim isPosRandomOffset As Boolean = False
+    Dim isMouseButtonHeld As Boolean = False
     Dim isMouseHoldPending As Boolean = False
+    Dim isKeyboardButtonHeld As Boolean = False
     Dim isKeyboardHoldPending As Boolean = False
-    Private rnd As New Random
+    Dim heldKeyboardKeys As New List(Of UShort)
+    Dim heldMouseButton As Integer = 0
+    Dim clickBasePosition As POINTAPI
+    Public timer1 As New Timer
+    Public timer2 As New Timer
+    Public timer3 As New Timer
 
     '显示连点按键设置
     Private Sub RadioButton1_Checked(sender As Object, e As RoutedEventArgs) Handles RadioButton1.Checked
@@ -909,132 +749,256 @@ Public Class MainWindow1
             Return
         End If
         If isSending Then StopSend()
-
         Dim isLongPress As Boolean = CheckBox4.IsChecked = True
-        Dim intervalMs As Integer = 0
-        If Not isLongPress Then
-            If Textbox1.Text = "" Then
-                ShowMyMessage("没有指定发送间隔")
-                Return
-            End If
-            If Not Integer.TryParse(Textbox1.Text, intervalMs) OrElse intervalMs <= 0 Then
-                ShowMyMessage("间隔时间不能小于等于0哦")
-                Return
-            End If
-        End If
-
-        Dim speedOffset As Boolean = CheckBox1.IsChecked = True
-        Dim posOffset As Boolean = CheckBox2.IsChecked = True
-        '键盘长按：按下并保持
-        If isLongPress AndAlso RadioButton3.IsChecked = True Then
-            Dim holdKeys As List(Of UShort) = PrepareClickKeysList()
-            If holdKeys Is Nothing Then Return
-            isKeyboardHoldPending = True
-            isClicking = True
-            Hide()
-            floatingWindow.FloatingWindowEvent_Click()
-            '等待启动按钮自身的按键抬起事件完成，避免它立即释放模拟的长按。
-            Dispatcher.BeginInvoke(New Action(Sub() BeginKeyboardHoldCore(holdKeys)), DispatcherPriority.Background)
+        If Not isLongPress AndAlso Textbox1.Text = "" Then
+            ShowMyMessage("没有指定发送间隔")
             Return
-        End If
-
-        '准备鼠标基准坐标
-        Dim baseX As Integer = 0
-        Dim baseY As Integer = 0
-        If CheckBox3.IsChecked = True Then '自定义鼠标位置
-            If Textbox2.Text = "" OrElse Textbox2.Text = "," Then
-                ShowMyMessage("没有指定自定义鼠标位置")
+        ElseIf isLongPress OrElse Textbox1.Text > 0 Then
+            If Not isLongPress Then clickTime = Textbox1.Text '此处隐式转换
+            isSpeedRandomOffset = CheckBox1.IsChecked = True
+            isPosRandomOffset = CheckBox2.IsChecked = True
+            If isLongPress AndAlso RadioButton3.IsChecked = True Then
+                If Not PrepareClickKeys() Then Return
+                heldKeyboardKeys.Clear()
+                heldKeyboardKeys.AddRange(sendKeys)
+                isKeyboardHoldPending = True
+                isClicking = True
+                Hide()
+                floatingWindow.FloatingWindowEvent_Click()
+                Dispatcher.BeginInvoke(New Action(AddressOf BeginKeyboardHold), DispatcherPriority.Background)
                 Return
-            Else
-                Dim cursorPos As String() = Textbox2.Text.Split(",") '坐标形式：（横坐标,纵坐标）
-                baseX = Integer.Parse(cursorPos(0))
-                baseY = Integer.Parse(cursorPos(1))
-                SetCursorPosition(baseX, baseY)
-                ShowMyMessage("已确定鼠标位置：" & baseX & "," & baseY & "请勿移动鼠标！若要停止请按快捷键")
+            ElseIf CheckBox3.IsChecked = True Then '自定义鼠标位置
+                If Textbox2.Text = "" Or Textbox2.Text = "," Then
+                    ShowMyMessage("没有指定自定义鼠标位置")
+                    Return
+                Else
+                    Dim cursorPos As String() = Textbox2.Text.Split(",") '坐标形式：（横坐标,纵坐标）
+                    Dim x As Integer = cursorPos(0)
+                    Dim y As Integer = cursorPos(1)
+                    SetCursorPosition(x, y)
+                    clickBasePosition.x = x
+                    clickBasePosition.y = y
+                    ShowMyMessage("已确定鼠标位置：" & x & "," & y & "请勿移动鼠标！若要停止请按快捷键")
+                End If
             End If
-        ElseIf posOffset OrElse isLongPress Then
-            Dim currentPos As POINTAPI
-            GetCursorPos(currentPos)
-            baseX = currentPos.x
-            baseY = currentPos.y
-        End If
-        If isLongPress AndAlso posOffset Then
-            baseX += rnd.Next(-15, 16)
-            baseY += rnd.Next(-15, 16)
-            SetCursorPosition(baseX, baseY)
-        End If
-
-        If isLongPress Then '鼠标长按：按下并保持
-            Dim button As Integer = If(RadioButton1.IsChecked = True, 1, 2)
-            isMouseHoldPending = True
-            isClicking = True
-            Hide()
-            floatingWindow.FloatingWindowEvent_Click()
-            '等待启动按钮自身的鼠标抬起事件完成，避免它立即释放模拟的长按。
-            Dispatcher.BeginInvoke(New Action(Sub() BeginMouseHoldCore(button)), DispatcherPriority.Background)
-        ElseIf RadioButton1.IsChecked = True Then '左键连点
-            OpEngine.StartMouseClick(intervalMs, speedOffset, posOffset, baseX, baseY, 1)
-            isClicking = True
-            Hide()
-            floatingWindow.FloatingWindowEvent_Click() '悬浮窗状态更新
-        ElseIf RadioButton2.IsChecked = True Then '右键连点 
-            OpEngine.StartMouseClick(intervalMs, speedOffset, posOffset, baseX, baseY, 2)
-            isClicking = True
-            Hide()
-            floatingWindow.FloatingWindowEvent_Click() '悬浮窗状态更新
-        ElseIf GetKeyLog() IsNot Nothing OrElse savedkeys.Count > 0 Then '自定义键连点
-            Dim clickKeys As List(Of UShort) = PrepareClickKeysList()
-            If clickKeys Is Nothing Then Return
-            OpEngine.StartKeyClick(intervalMs, clickKeys.ToArray())
-            isClicking = True
-            Hide()
-            floatingWindow.FloatingWindowEvent_Click() '悬浮窗状态更新
+            If isLongPress Then
+                If CheckBox3.IsChecked <> True Then GetCursorPos(clickBasePosition)
+                If isPosRandomOffset Then
+                    clickBasePosition.x += random.Next(-15, 16)
+                    clickBasePosition.y += random.Next(-15, 16)
+                    SetCursorPosition(clickBasePosition.x, clickBasePosition.y)
+                End If
+            ElseIf isPosRandomOffset AndAlso CheckBox3.IsChecked <> True Then
+                GetCursorPos(clickBasePosition)
+            End If
+            If isLongPress Then '长按
+                isMouseHoldPending = True
+                isSpeedRandomOffset = False
+                If RadioButton1.IsChecked = True Then
+                    heldMouseButton = MOUSEEVENTF_LEFTDOWN
+                Else
+                    heldMouseButton = MOUSEEVENTF_RIGHTDOWN
+                End If
+                isClicking = True
+                Hide()
+                floatingWindow.FloatingWindowEvent_Click()
+                '等待启动按钮自身的鼠标抬起事件完成，避免它立即释放模拟的长按。
+                Dispatcher.BeginInvoke(New Action(AddressOf BeginMouseHold), DispatcherPriority.Background)
+            ElseIf RadioButton1.IsChecked = True Then '左键连点
+                AddHandler timer1.Elapsed, AddressOf Timer1_Elapsed
+                timer1.Interval = clickTime
+                timer1.AutoReset = True
+                timer1.Enabled = True
+                timer1.Start()
+                isClicking = True
+                Hide()
+                floatingWindow.FloatingWindowEvent_Click() '悬浮窗状态更新
+            ElseIf RadioButton2.IsChecked = True Then '右键连点 
+                AddHandler timer2.Elapsed, AddressOf Timer2_Elapsed
+                timer2.Interval = clickTime
+                timer2.AutoReset = True
+                timer2.Enabled = True
+                timer2.Start()
+                isClicking = True
+                Hide()
+                floatingWindow.FloatingWindowEvent_Click() '悬浮窗状态更新
+            ElseIf GetKeyLog() IsNot Nothing OrElse savedkeys.Count > 0 Then '自定义键连点
+                If clickTime > 50 Then
+                    '清空上一次遗留的按键，避免多次启动时累积导致 Count 超过 4 而失效
+                    sendKeys.Clear()
+                    If IsNoneKeyList(savedkeys) Then '没有有效的已保存按键时使用当前输入
+                        For Each value As Byte In ConvertKeyLogToVirtualKeyCodes(GetKeyLog)
+                            sendKeys.Add(Convert.ToByte(value))
+                        Next
+                    Else
+                        For Each value As Byte In ConvertKeyLogToVirtualKeyCodes(savedkeys)
+                            sendKeys.Add(Convert.ToByte(value))
+                        Next
+                    End If
+                    Select Case sendKeys.Count
+                        Case 1
+                            numberofKeys = 1
+                            key1 = sendKeys(0)
+                        Case 2
+                            numberofKeys = 2
+                        Case 3
+                            numberofKeys = 3
+                        Case 4
+                            numberofKeys = 4
+                        Case Else
+                            ShowMyMessage("无法发送该（快捷）键")
+                            Return
+                    End Select
+                    timer3.Interval = clickTime
+                    AddHandler timer3.Elapsed, AddressOf Timer3_Elapsed
+                    timer3.AutoReset = True
+                    timer3.Enabled = True
+                    timer3.Start()
+                    isClicking = True
+                    Hide()
+                    floatingWindow.FloatingWindowEvent_Click() '悬浮窗状态更新
+                Else
+                    ShowMyMessage("键盘按键连点需要发送间隔大于50！")
+                    Textbox1.Text = 60
+                    Return
+                End If
+            Else
+                ShowMyMessage("没有指定要发送的键")
+                Return
+            End If
         Else
-            ShowMyMessage("没有指定要发送的键")
+            ShowMyMessage("间隔时间不能小于等于0哦")
             Return
         End If
     End Sub
 
-    Private Sub BeginMouseHoldCore(button As Integer)
+    Private Sub BeginMouseHold()
         If Not isClicking OrElse Not isMouseHoldPending Then Return
         isMouseHoldPending = False
-        OpEngine.StartMouseHold(button)
+        isMouseButtonHeld = True
+        If heldMouseButton = MOUSEEVENTF_LEFTDOWN Then
+            mouse_event(MOUSEEVENTF_LEFTDOWN, clickBasePosition.x, clickBasePosition.y, 0, 0)
+        ElseIf heldMouseButton = MOUSEEVENTF_RIGHTDOWN Then
+            mouse_event(MOUSEEVENTF_RIGHTDOWN, clickBasePosition.x, clickBasePosition.y, 0, 0)
+        End If
     End Sub
 
-    Private Sub BeginKeyboardHoldCore(keys As List(Of UShort))
+    Private Sub BeginKeyboardHold()
         If Not isClicking OrElse Not isKeyboardHoldPending Then Return
         isKeyboardHoldPending = False
-        OpEngine.StartKeyHold(keys.ToArray())
+        UserInputHandler.SendKeyCombinationDown(heldKeyboardKeys)
+        isKeyboardButtonHeld = True
     End Sub
 
-    Private Function PrepareClickKeysList() As List(Of UShort)
-        Dim keys As New List(Of UShort)
-        If IsNoneKeyList(savedkeys) Then '没有有效的已保存按键时使用当前输入
+    Private Function PrepareClickKeys() As Boolean
+        sendKeys.Clear()
+        If IsNoneKeyList(savedkeys) Then
             If GetKeyLog() Is Nothing Then
                 ShowMyMessage("没有指定要发送的键")
-                Return Nothing
+                Return False
             End If
             For Each value As Byte In ConvertKeyLogToVirtualKeyCodes(GetKeyLog)
-                keys.Add(value)
+                sendKeys.Add(value)
             Next
         Else
             For Each value As Byte In ConvertKeyLogToVirtualKeyCodes(savedkeys)
-                keys.Add(value)
+                sendKeys.Add(value)
             Next
         End If
-        If keys.Count < 1 OrElse keys.Count > 4 Then
+        If sendKeys.Count < 1 OrElse sendKeys.Count > 4 Then
             ShowMyMessage("无法发送该（快捷）键")
-            Return Nothing
+            Return False
         End If
-        Return keys
+        Return True
     End Function
 
+    Dim random As New Random
+    Private Sub Timer1_Elapsed(sender As Object, e As ElapsedEventArgs)
+        '左键连点
+        If isSpeedRandomOffset = True Then
+            Dim randomSpeed As Integer = random.Next(-10, 11)
+            timer1.Interval = Math.Max(1, clickTime + randomSpeed)
+        End If
+        Dim P As POINTAPI
+        GetCursorPos(P)
+        If isPosRandomOffset = True Then
+            P.x = clickBasePosition.x + random.Next(-15, 16)
+            P.y = clickBasePosition.y + random.Next(-15, 16)
+            SetCursorPosition(P.x, P.y)
+        End If
+        mouse_event(MOUSEEVENTF_LEFTDOWN, P.x.ToString, P.y.ToString, 0, 0)
+        mouse_event(MOUSEEVENTF_LEFTUP, P.x.ToString, P.y.ToString, 0, 0)
+    End Sub
+    Private Sub Timer2_Elapsed(sender As Object, e As ElapsedEventArgs)
+        '右键连点
+        If isSpeedRandomOffset = True Then
+            Dim randomSpeed As Integer = random.Next(-10, 11)
+            timer2.Interval = Math.Max(1, clickTime + randomSpeed)
+        End If
+        Dim P As POINTAPI
+        GetCursorPos(P)
+        If isPosRandomOffset = True Then
+            P.x = clickBasePosition.x + random.Next(-15, 16)
+            P.y = clickBasePosition.y + random.Next(-15, 16)
+            SetCursorPosition(P.x, P.y)
+        End If
+        mouse_event(MOUSEEVENTF_RIGHTDOWN, P.x.ToString, P.y.ToString, 0, 0)
+        mouse_event(MOUSEEVENTF_RIGHTUP, P.x.ToString, P.y.ToString, 0, 0)
+    End Sub
+    Private Sub Timer3_Elapsed(sender As Object, e As ElapsedEventArgs)
+        '自定义键连点
+        Select Case numberofKeys
+            Case 1
+                SendKey(key1, True)
+                SendKey(key1, False)
+            Case 2
+                SendKeyCombination(sendKeys)
+            Case 3
+                SendKeyCombination(sendKeys)
+            Case 4
+                SendKeyCombination(sendKeys)
+            Case Else
+                ShowExpdlg("错误2：程序变量状态不正常，可能是程序处于测试版或已被篡改！", "")
+        End Select
+
+    End Sub
+
     Public Sub StopClick()
+
         isMouseHoldPending = False
         isKeyboardHoldPending = False
-        OpEngine.StopAll()
+        If isKeyboardButtonHeld Then
+            UserInputHandler.SendKeyCombinationUp(heldKeyboardKeys)
+            isKeyboardButtonHeld = False
+            heldKeyboardKeys.Clear()
+        End If
+        If isMouseButtonHeld Then
+            If heldMouseButton = MOUSEEVENTF_LEFTDOWN Then
+                mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+            ElseIf heldMouseButton = MOUSEEVENTF_RIGHTDOWN Then
+                mouse_event(MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
+            End If
+            isMouseButtonHeld = False
+            heldMouseButton = 0
+        End If
+
+        RemoveHandler timer1.Elapsed, AddressOf Timer1_Elapsed
+        timer1.Stop()
+        RemoveHandler timer2.Elapsed, AddressOf Timer2_Elapsed
+        timer2.Stop()
+        RemoveHandler timer3.Elapsed, AddressOf Timer3_Elapsed
+        timer3.Stop()
+        timer1.AutoReset = False
+        timer2.AutoReset = False
+        timer3.AutoReset = False
+        timer1.Enabled = False
+        timer2.Enabled = False
+        timer3.Enabled = False
         isClicking = False
+        isSpeedRandomOffset = False
+        isPosRandomOffset = False
         floatingWindow.FloatingWindow_Reset()
+        GC.Collect()
     End Sub
 
 #End Region
@@ -1159,13 +1123,6 @@ Public Class MainWindow1
     Private ReadOnly timerSend As New DispatcherTimer(DispatcherPriority.Normal)
     Dim isSending As Boolean = False
     Dim isClicking As Boolean = False
-    Dim rapidFireSendKey As Integer = 0 '0=Enter，1=Shift+Enter
-    Dim rapidFireSendMethod As Integer = 0 '0=快捷键，1=点击发送按钮，2=自动（先按钮后快捷键）
-    Private sendTargetWindowManual As IntPtr = IntPtr.Zero '手动选取的连发目标窗口（会话内记忆）
-    Private sendTargetWindowCandidate As IntPtr = IntPtr.Zero '启动连发时的前台窗口候选
-    Private inputBoxCaptured As Boolean = False '是否已点选输入框位置
-    Private inputBoxRelativeX As Integer = 0 '输入框相对目标窗口左上角的坐标
-    Private inputBoxRelativeY As Integer = 0
     Private isUpdatingSendEditor As Boolean = False
     Private sendItemPreviews As New List(Of String)
     Private activeSendPhrases As New List(Of RapidFireItem)
@@ -1384,15 +1341,6 @@ Public Class MainWindow1
         sendIntervalMilliseconds = interval
         timerSend.Interval = TimeSpan.FromMilliseconds(sendIntervalMilliseconds)
         timerSend.Stop()
-        '记录启动时的前台窗口（若不属于本程序）作为目标候选，提升自动识别成功率
-        Dim startFg As IntPtr = GetForegroundWindow()
-        Dim startFgPid As UInteger = 0
-        If startFg <> IntPtr.Zero Then GetWindowThreadProcessId(startFg, startFgPid)
-        If startFg <> IntPtr.Zero AndAlso startFgPid <> CUInt(Diagnostics.Process.GetCurrentProcess().Id) Then
-            sendTargetWindowCandidate = startFg
-        Else
-            sendTargetWindowCandidate = IntPtr.Zero
-        End If
         Hide()
         floatingWindow.FloatingWindowEvent_Send()
 
@@ -1407,30 +1355,6 @@ Public Class MainWindow1
         sendStartTimer.Stop()
         If Not isSending Then Return
 
-        '优先使用手动选取的目标窗口
-        If sendTargetWindowManual <> IntPtr.Zero Then
-            If IsWindow(sendTargetWindowManual) Then
-                sendTargetWindow = sendTargetWindowManual
-                SendNextPhrase()
-                If isSending AndAlso Not imagePastePending Then timerSend.Start()
-                Return
-            End If
-            '手动选取的窗口已关闭，恢复为自动识别
-            sendTargetWindowManual = IntPtr.Zero
-            If SelectedSendTargetLabel IsNot Nothing Then SelectedSendTargetLabel.Text = "目标窗口：自动识别"
-        End If
-
-        '其次使用启动时记录的窗口候选
-        If sendTargetWindowCandidate <> IntPtr.Zero Then
-            If IsWindow(sendTargetWindowCandidate) Then
-                sendTargetWindow = sendTargetWindowCandidate
-                SendNextPhrase()
-                If isSending AndAlso Not imagePastePending Then timerSend.Start()
-                Return
-            End If
-            sendTargetWindowCandidate = IntPtr.Zero
-        End If
-
         Dim candidateWindow As IntPtr = GetForegroundWindow()
         Dim candidateProcessId As UInteger = 0
         If candidateWindow <> IntPtr.Zero Then GetWindowThreadProcessId(candidateWindow, candidateProcessId)
@@ -1443,7 +1367,7 @@ Public Class MainWindow1
             StopSend()
             Show()
             Activate()
-            ShowMyMessage("无法确定连发目标窗口，请先切换到目标窗口后使用连发热键，或点击""手动选取""按钮指定。")
+            ShowMyMessage("无法确定连发目标窗口，请先切换到目标窗口后使用连发热键，或重新点击开始。")
             Return
         End If
 
@@ -1468,88 +1392,6 @@ Public Class MainWindow1
         End If
     End Sub
 
-    '根据选项发送连发“发送键”：Enter 或 Shift+Enter
-    Private Sub SendSendKeyForSetting()
-        UserInputHandler.SendSendKey(rapidFireSendKey = 1)
-    End Sub
-
-    '按“连发发送方式”执行发送：快捷键 / 点击发送按钮 / 自动（先按钮后快捷键）
-    Private Sub SendPhrase()
-        Select Case rapidFireSendMethod
-            Case 1 '点击发送按钮
-                If Not UserInputHandler.TryInvokeSendButton(sendTargetWindow) Then
-                    StopSend()
-                    ShowMyMessage("未在目标窗口中找到""发送""按钮，任务已停止。可改用""快捷键""或""自动""发送方式。")
-                End If
-            Case 2 '自动：先按钮后快捷键
-                If Not UserInputHandler.TryInvokeSendButton(sendTargetWindow) Then
-                    SendSendKeyForSetting()
-                End If
-            Case Else '快捷键
-                SendSendKeyForSetting()
-        End Select
-    End Sub
-
-    '选取连发目标窗口（会话内记忆，窗口关闭后自动恢复为自动识别）
-    Private Sub BtnPickSendTarget_Click(sender As Object, e As RoutedEventArgs)
-        Try
-            Dim selectorForm As New WindowSelectorDlg()
-            If selectorForm.ShowDialog() = System.Windows.Forms.DialogResult.OK Then
-                Dim selectedHwnd As IntPtr = selectorForm.SelectedWindowHwnd
-                If selectedHwnd = IntPtr.Zero Then
-                    ShowMyMessage("未选取有效窗体，请重试。")
-                    Return
-                End If
-                sendTargetWindowManual = selectedHwnd
-                inputBoxCaptured = False
-                Dim title As String = LoafModule.GetWindowTitle(selectedHwnd)
-                If SelectedSendTargetLabel IsNot Nothing Then
-                    If Not String.IsNullOrEmpty(title) Then
-                        SelectedSendTargetLabel.Text = "目标窗口：" & title
-                    Else
-                        SelectedSendTargetLabel.Text = "目标窗口句柄：" & selectedHwnd.ToString()
-                    End If
-                End If
-                ShowMyMessage("连发目标窗口已指定。开始连发时将自动向该窗口发送。")
-            End If
-        Catch ex As Exception
-            ShowExpdlg("错误9：程序选取窗体时遇到错误，可能是LCS窗体选取器（WindowSelector.dll）丢失！", ex.Message & vbLf & ex.StackTrace)
-        End Try
-    End Sub
-
-    '点选输入框：隐藏主窗口，捕获用户在目标窗口输入框上的点击位置，
-    '之后连发会直接点击该位置并输入文本（对 QQ 等难以自动识别的应用最可靠）。
-    Private Sub BtnCaptureInputBox_Click(sender As Object, e As RoutedEventArgs)
-        If isSending Then StopSend()
-        AddHandler UserInputHandler.PointCaptured, AddressOf OnInputBoxCaptured
-        UserInputHandler.StartSelection()
-        Hide()
-    End Sub
-
-    Private Sub OnInputBoxCaptured(x As Integer, y As Integer, hwnd As IntPtr)
-        RemoveHandler UserInputHandler.PointCaptured, AddressOf OnInputBoxCaptured
-        UserInputHandler.StopSelection()
-        If hwnd = IntPtr.Zero Then
-            Show()
-            ShowMyMessage("未捕获到点击位置，请重试。")
-            Return
-        End If
-        Dim rect As RECT
-        If GetWindowRect(hwnd, rect) Then
-            inputBoxRelativeX = x - rect.Left
-            inputBoxRelativeY = y - rect.Top
-            inputBoxCaptured = True
-            sendTargetWindowManual = hwnd
-            If SelectedSendTargetLabel IsNot Nothing Then SelectedSendTargetLabel.Text = "目标窗口：已选取（输入框位置已记录）"
-            Show()
-            Activate()
-            ShowMyMessage("输入框位置已记录。开始连发时将点击该位置输入文本。")
-        Else
-            Show()
-            ShowMyMessage("无法获取窗口位置，点选失败，请重试。")
-        End If
-    End Sub
-
     Private Sub SendNextPhrase()
         If sendCursor >= activeSendPhrases.Count Then
             If sendLoop Then
@@ -1564,7 +1406,7 @@ Public Class MainWindow1
             ShowMyMessage("连发目标窗口已关闭，任务已停止。")
             Return
         End If
-        TryActivateWindow(sendTargetWindow)
+        SetForegroundWindow(sendTargetWindow)
         Dim itemToSend As RapidFireItem = activeSendPhrases(sendCursor)
         Try
             If itemToSend.Kind = RapidFireItemKind.Image Then
@@ -1577,12 +1419,8 @@ Public Class MainWindow1
                 TryStartImagePaste(itemToSend)
                 Return
             ElseIf Not String.IsNullOrWhiteSpace(itemToSend.Text) Then
-                If inputBoxCaptured Then
-                    UserInputHandler.InsertTextToTarget(itemToSend.Text, sendTargetWindow, inputBoxRelativeX, inputBoxRelativeY)
-                Else
-                    UserInputHandler.InsertTextToTarget(itemToSend.Text, sendTargetWindow)
-                End If
-                SendPhrase()
+                UserInputHandler.SendUnicodeText(itemToSend.Text)
+                UserInputHandler.SendEnterKey()
                 sendIntervalWatch.Restart()
             End If
         Catch ex As Exception
@@ -1664,7 +1502,7 @@ Public Class MainWindow1
             Return
         End If
         Try
-            SendPhrase()
+            UserInputHandler.SendEnterKey()
         Catch ex As ComponentModel.Win32Exception
             StopSend()
             ShowMyMessage(ex.Message)
@@ -1874,479 +1712,6 @@ Public Class MainWindow1
         activeImageClipboardData.SetData("PNG", New MemoryStream(pngBytes, False), False)
         'copy=False 避免 OLE 同步持久化被第三方剪贴板监听器无限阻塞。
         Clipboard.SetDataObject(activeImageClipboardData, False)
-    End Sub
-
-#End Region
-
-#Region "Record"
-    '录制
-    Private recordings As New List(Of KbmrRecording)
-    Private currentRecordingIndex As Integer = -1
-
-    Private Sub InitializeRecordSettings()
-        Dim rate As Integer = 15
-        Integer.TryParse(ReadSetting("RecordSampleRateMs", 15).ToString(), rate)
-        If rate < 1 OrElse rate > 1000 Then rate = 15
-        TxtRecordSampleRate.Text = rate.ToString(Globalization.CultureInfo.InvariantCulture)
-        ChkPlaybackSmooth.IsChecked = ReadSetting("RecordPlaybackSmooth", 1) = 1
-        ChkPlaybackLoop.IsChecked = ReadSetting("RecordPlaybackLoop", 0) = 1
-        ChkPlaybackBlockInput.IsChecked = ReadSetting("RecordPlaybackBlockInput", 0) = 1
-        Combobox6.SelectedIndex = 1
-        UpdateRecordButtons()
-    End Sub
-
-    '开始录制
-    Private Sub Button_Click_6(sender As Object, e As RoutedEventArgs)
-        StartRecording()
-    End Sub
-
-    Public Sub StartRecording()
-        If InputRecorder.IsRecording Then Return
-        If MacroPlayer.IsPlaying Then MacroPlayer.StopPlayback()
-        If ScriptRunner.IsRunning Then
-            ShowMyMessage("脚本正在运行，请先停止脚本后再开始录制。")
-            Return
-        End If
-        Dim rate As Integer
-        If Not Integer.TryParse(TxtRecordSampleRate.Text, rate) OrElse rate < 1 OrElse rate > 1000 Then
-            ShowMyMessage("鼠标采样频率需为1到1000之间的整数（毫秒）。")
-            Return
-        End If
-        WriteSetting("RecordSampleRateMs", rate)
-        InputRecorder.StartRecording(rate)
-        RecordStatusLabel.Text = "正在录制……按""停止录制""或录制快捷键结束。"
-        UpdateRecordButtons()
-    End Sub
-
-    '停止录制
-    Private Sub Button_Click_8(sender As Object, e As RoutedEventArgs)
-        StopRecordingAndSave()
-    End Sub
-
-    Public Sub StopRecordingAndSave()
-        If Not InputRecorder.IsRecording Then Return
-        Dim result As KbmrRecording = InputRecorder.StopRecording()
-        If result Is Nothing Then Return
-        result.Name = "录制 " & DateTime.Now.ToString("MM-dd HH:mm:ss")
-        recordings.Add(result)
-        currentRecordingIndex = recordings.Count - 1
-        RefreshRecordList()
-        RecordStatusLabel.Text = "录制完成：" & result.Events.Count & " 个事件，" & (result.DurationMs / 1000.0).ToString("0.0") & " 秒。"
-        UpdateRecordButtons()
-    End Sub
-
-    Public Sub ToggleRecording()
-        If InputRecorder.IsRecording Then
-            StopRecordingAndSave()
-        Else
-            StartRecording()
-        End If
-    End Sub
-
-    '删除录制
-    Private Sub Button_Click_9(sender As Object, e As RoutedEventArgs)
-        If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then Return
-        recordings.RemoveAt(currentRecordingIndex)
-        If recordings.Count = 0 Then
-            currentRecordingIndex = -1
-        ElseIf currentRecordingIndex >= recordings.Count Then
-            currentRecordingIndex = recordings.Count - 1
-        End If
-        RefreshRecordList()
-        UpdateRecordButtons()
-    End Sub
-
-    Private Sub RefreshRecordList()
-        RecordList.Items.Clear()
-        For Each item As KbmrRecording In recordings
-            RecordList.Items.Add(item.Name)
-        Next
-        If currentRecordingIndex >= 0 AndAlso currentRecordingIndex < RecordList.Items.Count Then
-            RecordList.SelectedIndex = currentRecordingIndex
-        End If
-        UpdateRecordContent()
-    End Sub
-
-    Private Sub UpdateRecordContent()
-        If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then
-            RecordContent.Text = ""
-            Return
-        End If
-        Dim item As KbmrRecording = recordings(currentRecordingIndex)
-        Dim builder As New StringBuilder()
-        builder.AppendLine("名称：" & item.Name)
-        builder.AppendLine("事件数：" & item.Events.Count)
-        builder.AppendLine("时长：" & (item.DurationMs / 1000.0).ToString("0.000") & " 秒")
-        builder.AppendLine("鼠标采样频率：" & item.SampleIntervalMs & " ms")
-        builder.AppendLine("录制分辨率：" & item.ScreenWidth & " x " & item.ScreenHeight)
-        builder.AppendLine("录制时间：" & item.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"))
-        builder.AppendLine()
-        builder.AppendLine("事件预览：")
-        Dim previewCount As Integer = Math.Min(item.Events.Count, 300)
-        For index As Integer = 0 To previewCount - 1
-            builder.AppendLine(FormatKbmrEvent(item.Events(index)))
-        Next
-        If item.Events.Count > previewCount Then builder.AppendLine("……（仅显示前 " & previewCount & " 个事件）")
-        RecordContent.Text = builder.ToString()
-    End Sub
-
-    Private Function FormatKbmrEvent(item As KbmrEvent) As String
-        Dim time As String = (item.OffsetMs / 1000.0).ToString("0.000")
-        Select Case item.Kind
-            Case KbmrEventKind.KeyDown
-                Return $"[{time}] 按下 {KeyNameMapper.FormatKeyName(item.Vk)}"
-            Case KbmrEventKind.KeyUp
-                Return $"[{time}] 抬起 {KeyNameMapper.FormatKeyName(item.Vk)}"
-            Case KbmrEventKind.MouseDown
-                Return $"[{time}] 鼠标按下 ({item.X},{item.Y}) {MouseButtonName(item.Button)}"
-            Case KbmrEventKind.MouseUp
-                Return $"[{time}] 鼠标抬起 ({item.X},{item.Y}) {MouseButtonName(item.Button)}"
-            Case KbmrEventKind.MouseMove
-                Return $"[{time}] 移动 ({item.X},{item.Y})"
-            Case KbmrEventKind.Wheel
-                Return $"[{time}] 滚轮 {item.Delta}"
-            Case Else
-                Return $"[{time}] 未知事件"
-        End Select
-    End Function
-
-    Private Function MouseButtonName(button As Byte) As String
-        Select Case button
-            Case 2
-                Return "右键"
-            Case 3
-                Return "中键"
-            Case 4
-                Return "侧键1"
-            Case 5
-                Return "侧键2"
-            Case Else
-                Return "左键"
-        End Select
-    End Function
-
-    Private Sub RecordList_SelectionChanged(sender As Object, e As SelectionChangedEventArgs)
-        If RecordList.SelectedIndex < 0 Then Return
-        currentRecordingIndex = RecordList.SelectedIndex
-        UpdateRecordContent()
-        UpdateRecordButtons()
-    End Sub
-
-    Private Sub RecordList_MouseDoubleClick(sender As Object, e As MouseButtonEventArgs)
-        If RecordList.SelectedIndex >= 0 Then BtnRecordPlay_Click(Nothing, Nothing)
-    End Sub
-
-    Private Sub BtnRecordPlay_Click(sender As Object, e As RoutedEventArgs)
-        If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then
-            ShowMyMessage("请先选择一条录制。")
-            Return
-        End If
-        If InputRecorder.IsRecording Then StopRecordingAndSave()
-        If ScriptRunner.IsRunning Then
-            ShowMyMessage("脚本正在运行，请先停止脚本后再回放录制。")
-            Return
-        End If
-        If isClicking Then StopClick()
-        If isSending Then StopSend()
-        Dim item As KbmrRecording = recordings(currentRecordingIndex)
-        If item.Events.Count = 0 Then
-            ShowMyMessage("该录制没有内容。")
-            Return
-        End If
-        Dim speed As Double = 1.0
-        Select Case Combobox6.SelectedIndex
-            Case 0
-                speed = 0.5
-            Case 2
-                speed = 2.0
-            Case 3
-                speed = 4.0
-        End Select
-        MacroPlayer.StartPlayback(item, speed, ChkPlaybackLoop.IsChecked.GetValueOrDefault(False),
-                                  ChkPlaybackSmooth.IsChecked.GetValueOrDefault(True),
-                                  ChkPlaybackBlockInput.IsChecked.GetValueOrDefault(False))
-        RecordStatusLabel.Text = "正在回放……按""停止播放""或终止任务快捷键（默认 Ctrl+G）可结束。"
-        UpdateRecordButtons()
-    End Sub
-
-    Private Sub BtnRecordStopPlay_Click(sender As Object, e As RoutedEventArgs)
-        MacroPlayer.StopPlayback()
-    End Sub
-
-    Private Sub MacroPlayer_PlaybackStopped()
-        Dispatcher.BeginInvoke(New Action(Sub()
-                                              RecordStatusLabel.Text = "回放已停止。"
-                                              UpdateRecordButtons()
-                                          End Sub))
-    End Sub
-
-    Private Sub BtnRecordSave_Click(sender As Object, e As RoutedEventArgs)
-        If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then Return
-        Dim dialog As New SaveFileDialog With {
-            .Title = "保存录制",
-            .Filter = "键鼠管家录制文件 (*.kbmr)|*.kbmr|所有文件 (*.*)|*.*",
-            .DefaultExt = ".kbmr",
-            .AddExtension = True,
-            .OverwritePrompt = True,
-            .FileName = "录制"
-        }
-        If dialog.ShowDialog(Me) <> True Then Return
-        Try
-            File.WriteAllBytes(dialog.FileName, KbmrCodec.Serialize(recordings(currentRecordingIndex)))
-            ShowMyMessage("录制已保存到文件。")
-        Catch ex As Exception
-            ShowMyMessage("无法保存录制：" & ex.Message)
-        End Try
-    End Sub
-
-    Private Sub BtnRecordOpen_Click(sender As Object, e As RoutedEventArgs)
-        Dim dialog As New OpenFileDialog With {
-            .Title = "打开录制",
-            .Filter = "键鼠管家录制文件 (*.kbmr)|*.kbmr|所有文件 (*.*)|*.*",
-            .CheckFileExists = True,
-            .CheckPathExists = True,
-            .Multiselect = False
-        }
-        If dialog.ShowDialog(Me) <> True Then Return
-        Try
-            Dim result As KbmrRecording = KbmrCodec.Deserialize(File.ReadAllBytes(dialog.FileName))
-            result.Name = Path.GetFileNameWithoutExtension(dialog.FileName)
-            recordings.Add(result)
-            currentRecordingIndex = recordings.Count - 1
-            RefreshRecordList()
-            UpdateRecordButtons()
-            ShowMyMessage("录制已打开。")
-        Catch ex As Exception
-            ShowMyMessage("无法打开录制：" & ex.Message)
-        End Try
-    End Sub
-
-    Private Sub BtnRecordExport_Click(sender As Object, e As RoutedEventArgs)
-        If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then Return
-        TxtScriptEditor.Text = MacroScriptExporter.Generate(recordings(currentRecordingIndex))
-        currentScriptPath = ""
-        currentScriptHash = ""
-        currentScriptTrusted = False
-        TxtScriptTrustStatus.Text = "由录制生成（未信任）"
-        TabControl1.SelectedIndex = 5
-        ShowMyMessage("已生成脚本，可点击""运行""直接执行。")
-    End Sub
-
-    Private Sub UpdateRecordButtons()
-        Dim isRecording As Boolean = InputRecorder.IsRecording
-        Dim isPlaying As Boolean = MacroPlayer.IsPlaying
-        BtnRecordStart.IsEnabled = Not isRecording AndAlso Not isPlaying
-        BtnRecordStop.IsEnabled = isRecording
-        BtnRecordPlay.IsEnabled = currentRecordingIndex >= 0 AndAlso Not isRecording AndAlso Not isPlaying
-        BtnRecordStopPlay.IsEnabled = isPlaying
-        BtnRecordSave.IsEnabled = currentRecordingIndex >= 0
-        BtnRecordOpen.IsEnabled = Not isRecording AndAlso Not isPlaying
-        BtnRecordDelete.IsEnabled = currentRecordingIndex >= 0 AndAlso Not isRecording
-        BtnRecordExport.IsEnabled = currentRecordingIndex >= 0
-    End Sub
-
-#End Region
-
-#Region "Script"
-    '脚本
-    Private currentScriptPath As String = ""
-    Private currentScriptHash As String = ""
-    Private currentScriptTrusted As Boolean = False
-
-    Private Sub InitializeScriptSettings()
-        TxtScriptOutput.Text = ""
-        TxtScriptTrustStatus.Text = "未加载脚本"
-        UpdateScriptButtons()
-    End Sub
-
-    Private Sub BtnScriptRun_Click(sender As Object, e As RoutedEventArgs)
-        If ScriptRunner.IsRunning Then
-            ScriptRunner.StopScript()
-            Return
-        End If
-        Dim code As String = TxtScriptEditor.Text
-        If String.IsNullOrWhiteSpace(code) Then
-            ShowMyMessage("脚本内容为空。")
-            Return
-        End If
-        Dim analysis As ScriptAnalysisResult = ScriptSecurity.Analyze(code)
-        If analysis.SyntaxErrors.Count > 0 Then
-            ShowMyMessage("脚本存在语法错误，无法运行：" & vbCrLf & String.Join(vbCrLf, analysis.SyntaxErrors.Take(5)))
-            Return
-        End If
-        Dim hash As String = ScriptSecurity.ComputeTextHash(code)
-        If Not ScriptSecurity.IsTrusted(hash) Then
-            If Not PromptScriptTrust(analysis, If(currentScriptPath, "(编辑器中的脚本)"), hash) Then Return
-        End If
-        currentScriptHash = hash
-        currentScriptTrusted = ScriptSecurity.IsTrusted(hash)
-        AppendScriptOutput("=== 开始运行脚本 " & DateTime.Now.ToString("HH:mm:ss") & " ===")
-        ScriptRunner.RunScript(code)
-    End Sub
-
-    Private Function PromptScriptTrust(analysis As ScriptAnalysisResult, sourcePath As String, hash As String) As Boolean
-        Dim dialog As New ScriptSecurityWindow(analysis, sourcePath, hash)
-        dialog.Owner = Me
-        dialog.ShowDialog()
-        If dialog.Allowed AndAlso dialog.TrustRequested Then
-            ScriptSecurity.TrustScript(hash, sourcePath)
-        End If
-        Return dialog.Allowed
-    End Function
-
-    Private Sub BtnScriptSave_Click(sender As Object, e As RoutedEventArgs)
-        If String.IsNullOrWhiteSpace(TxtScriptEditor.Text) Then
-            ShowMyMessage("脚本内容为空。")
-            Return
-        End If
-        Dim dialog As New SaveFileDialog With {
-            .Title = "保存脚本",
-            .Filter = "PowerShell 脚本 (*.ps1)|*.ps1|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
-            .DefaultExt = ".ps1",
-            .AddExtension = True,
-            .OverwritePrompt = True,
-            .FileName = "脚本"
-        }
-        If dialog.ShowDialog(Me) <> True Then Return
-        Try
-            File.WriteAllText(dialog.FileName, TxtScriptEditor.Text, New UTF8Encoding(True))
-            currentScriptPath = dialog.FileName
-            currentScriptHash = ScriptSecurity.ComputeFileHash(dialog.FileName)
-            currentScriptTrusted = ScriptSecurity.IsTrusted(currentScriptHash)
-            UpdateScriptTrustStatus()
-            ShowMyMessage("脚本已保存到文件。")
-        Catch ex As Exception
-            ShowMyMessage("无法保存脚本：" & ex.Message)
-        End Try
-    End Sub
-
-    Private Sub BtnScriptOpen_Click(sender As Object, e As RoutedEventArgs)
-        Dim dialog As New OpenFileDialog With {
-            .Title = "加载脚本",
-            .Filter = "PowerShell 脚本 (*.ps1)|*.ps1|文本文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
-            .CheckFileExists = True,
-            .CheckPathExists = True,
-            .Multiselect = False
-        }
-        If dialog.ShowDialog(Me) <> True Then Return
-        Try
-            Dim info As New FileInfo(dialog.FileName)
-            If info.Length > 4 * 1024 * 1024 Then Throw New InvalidDataException("脚本文件不能超过 4 MiB。")
-            Dim code As String = File.ReadAllText(dialog.FileName)
-            Dim analysis As ScriptAnalysisResult = ScriptSecurity.Analyze(code)
-            Dim hash As String = ScriptSecurity.ComputeFileHash(dialog.FileName)
-            If Not ScriptSecurity.IsTrusted(hash) Then
-                If Not PromptScriptTrust(analysis, dialog.FileName, hash) Then Return
-            End If
-            If analysis.SyntaxErrors.Count > 0 Then
-                ShowMyMessage("警告：脚本存在语法错误，已加载但无法运行：" & vbCrLf & String.Join(vbCrLf, analysis.SyntaxErrors.Take(5)))
-            End If
-            TxtScriptEditor.Text = code
-            currentScriptPath = dialog.FileName
-            currentScriptHash = hash
-            currentScriptTrusted = ScriptSecurity.IsTrusted(hash)
-            UpdateScriptTrustStatus()
-            AppendScriptOutput("已加载脚本：" & dialog.FileName)
-        Catch ex As Exception
-            ShowMyMessage("无法加载脚本：" & ex.Message)
-        End Try
-    End Sub
-
-    Private Sub BtnScriptClear_Click(sender As Object, e As RoutedEventArgs)
-        TxtScriptEditor.Clear()
-        currentScriptPath = ""
-        currentScriptHash = ""
-        currentScriptTrusted = False
-        UpdateScriptTrustStatus()
-    End Sub
-
-    Private Sub BtnScriptHelp_Click(sender As Object, e As RoutedEventArgs)
-        Dim helps As New List(Of String) From {
-            """脚本""页可以直接运行 PowerShell 5.1 脚本，并使用键鼠管家提供的自动化命令。",
-            "",
-            "常用命令：",
-            "  Delay 500                     等待 500 毫秒",
-            "  Move 100 200                  移动鼠标到 (100,200)",
-            "  Click 100 200 [Left]          点击，按钮可省略（Left/Right/Middle/X1/X2）",
-            "  DoubleClick 100 200           双击",
-            "  MouseDown / MouseUp Right     按住 / 松开鼠标",
-            "  Wheel 120                     滚轮（正数向上）",
-            "  Drag 100 100 300 300          从 (100,100) 拖到 (300,300)",
-            "  KeyDown CTRL / KeyUp CTRL     按下 / 抬起按键",
-            "  KeyTap ENTER                  单击按键",
-            "  Combo 'Ctrl+Shift+A'          发送组合键",
-            "  TypeText '你好'               输入文本（支持中文）",
-            "  BlockInput $true/$false       阻止 / 恢复用户输入（Ctrl+Alt+Del 可强制解除）",
-            "  Get-CursorPos                 获取鼠标位置（.X / .Y）",
-            "  Get-PixelColor 100 200        读取屏幕像素颜色（返回 #RRGGBB）",
-            "  Get-CursorColor               读取鼠标指针所在像素颜色",
-            "  Save-ScreenRegion 0 0 800 600 'C:\\shot.png'   保存屏幕区域截图",
-            "  Get-Windows [-Title '*记事本*'] [-Class '*']    枚举可见窗口",
-            "  Set-ForegroundWindow $hwnd    激活窗口；Close-Window / Move-Window 同理",
-            "  Get-ClipboardText / Set-ClipboardText '文本'    读写剪贴板",
-            "  Start-App 'notepad.exe'       启动程序",
-            "",
-            "安全机制：",
-            "  导入或首次运行脚本时会显示安全提醒，列出脚本将执行的操作。",
-            "  勾选""信任此脚本""后按文件哈希记住；文件被修改后会再次提醒。",
-            "  脚本以当前用户权限运行，请只运行来源可信的脚本。",
-            "  快捷键：默认 Ctrl+F4 开始/停止录制；Ctrl+G 终止全部任务。"
-        }
-        ShowHelp(helps, "脚本帮助")
-    End Sub
-
-    Private Sub BtnScriptClearTrust_Click(sender As Object, e As RoutedEventArgs)
-        Dim answer As MsgBoxResult = MsgBox("确定要清空所有已信任的脚本记录吗？清空后所有脚本都会重新弹出安全提醒。",
-                                            MsgBoxStyle.YesNo Or MsgBoxStyle.Question, "清空信任列表")
-        If answer <> MsgBoxResult.Yes Then Return
-        ScriptSecurity.ClearTrustedScripts()
-        currentScriptTrusted = False
-        UpdateScriptTrustStatus()
-        ShowMyMessage("信任列表已清空。")
-    End Sub
-
-    Private Sub ScriptRunner_OutputReceived(text As String)
-        Dispatcher.BeginInvoke(New Action(Sub() AppendScriptOutput(text)))
-    End Sub
-
-    Private Sub ScriptRunner_StateChanged(running As Boolean)
-        Dispatcher.BeginInvoke(New Action(Sub()
-                                              UpdateScriptButtons()
-                                              UpdateScriptTrustStatus()
-                                          End Sub))
-    End Sub
-
-    Private Sub AppendScriptOutput(text As String)
-        TxtScriptOutput.AppendText(text & vbCrLf)
-        TxtScriptOutput.ScrollToEnd()
-    End Sub
-
-    Private Sub UpdateScriptButtons()
-        If ScriptRunner.IsRunning Then
-            BtnScriptRun.Content = "停止运行"
-            TxtScriptTrustStatus.Text = "运行中……"
-        Else
-            BtnScriptRun.Content = "运行"
-            UpdateScriptTrustStatus()
-        End If
-        BtnScriptSave.IsEnabled = Not ScriptRunner.IsRunning
-        BtnScriptOpen.IsEnabled = Not ScriptRunner.IsRunning
-        BtnScriptClear.IsEnabled = Not ScriptRunner.IsRunning
-        BtnScriptClearTrust.IsEnabled = Not ScriptRunner.IsRunning
-    End Sub
-
-    Private Sub UpdateScriptTrustStatus()
-        If ScriptRunner.IsRunning Then
-            TxtScriptTrustStatus.Text = "运行中……"
-            Return
-        End If
-        If String.IsNullOrEmpty(currentScriptHash) Then
-            TxtScriptTrustStatus.Text = "未加载脚本"
-        ElseIf currentScriptTrusted OrElse ScriptSecurity.IsTrusted(currentScriptHash) Then
-            TxtScriptTrustStatus.Text = "已信任（哈希匹配）"
-        Else
-            TxtScriptTrustStatus.Text = "未信任"
-        End If
     End Sub
 
 #End Region

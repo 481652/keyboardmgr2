@@ -5,13 +5,14 @@ Imports System.Windows.Forms
 Imports System.Windows.Interop
 Imports System.Windows.Media.Animation
 
-#Const WIDTH = 800
-#Const HEIGHT = 50
-
-
 Public Class FloatingWindow
     Inherits Window
     Private Shared _instance As FloatingWindow
+
+#Region "ChildWindowStick"
+    Public clipboardWindow As ClipboardWindow
+
+#End Region
 
 #Region "Hide in ALT+TAB"
     '使用API来防止在ALT+TAB中显示
@@ -427,7 +428,7 @@ Public Class FloatingWindow
                             'animationVersion += 1
                             'BeginAnimation(TopProperty, Nothing)
                             'Top = FoldedTop
-                            'isFloatingWindowFolded = True
+                            isFloatingWindowFolded = True
                             MoveTo(-40, True)
                         End Sub))
                 End If
@@ -491,6 +492,17 @@ Public Class FloatingWindow
             FloatingWindow.Instance.SetWindowNotTopMost()
         End If
         ThemeModule.ApplyWindowBackdrop(Me, AnimatedBorder, isMicaEnabled AndAlso ThemeModule.IsWindows11_22H2OrLater(), True)
+
+        '加载子窗口，使其吸附
+        '暂时注释掉，还没做完
+
+        'clipboardWindow = New ClipboardWindow() With {
+        '    .Owner = Me,
+        '    .WindowStartupLocation = WindowStartupLocation.Manual,
+        '    .ShowActivated = False
+        '}
+
+        'clipboardWindow.Show()
     End Sub
 
     Private Sub Window_Closing(sender As Object, e As System.ComponentModel.CancelEventArgs)

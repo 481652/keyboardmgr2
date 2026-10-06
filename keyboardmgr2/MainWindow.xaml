@@ -347,7 +347,13 @@
                     <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel Margin="10,8,16,12">
                             <TextBlock Text="行为" FontSize="23" FontWeight="Light"/>
-                            <CheckBox x:Name="DoAutoStartCheckbox" Content="开机自启动" Margin="8,10,0,0"/>
+							<StackPanel Orientation="Horizontal">
+								<CheckBox x:Name="DoAutoStartCheckbox" Content="开机自启动" Margin="8,10,0,0"/>
+								<ComboBox x:Name="DoRegisterAutoStartTaskComboBox" Width="100" Margin="20,10,0,0" Style="{DynamicResource comboboxStyle}">
+									<ComboBoxItem Content="注册为计划任务(高优先级)"/>
+									<ComboBoxItem Content="写入注册表中开机启动项(推荐)"/>
+								</ComboBox>
+							</StackPanel>
                             <Grid Margin="8,12,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
