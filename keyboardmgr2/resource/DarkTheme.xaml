@@ -6,7 +6,7 @@
     <!-- “关于”界面的图标 -->
     <BitmapImage x:Key="aboutIcon" UriSource="/keyboardmgr2;Component/Resource/icondark.png"/>
     <!-- 窗体资源 -->
-    <SolidColorBrush x:Key="backgraoundColor1" Color="#272727"/>
+    <SolidColorBrush x:Key="backgroundColor1" Color="#272727"/>
     <SolidColorBrush x:Key="foregroundColor1" Color="White"/>
     <SolidColorBrush x:Key="ControlFillColor" Color="#B82D2D2D"/>
     <SolidColorBrush x:Key="CardFillColor" Color="#A6333333"/>
@@ -137,12 +137,7 @@
         <Setter Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
     </Style>
 
-    <!-- ToolTip 资源：
-         本主题里的 <Style TargetType="TextBlock"> 是应用级隐式样式，会渗入 ToolTip 这棵独立的 Popup 树。
-         若模板用 ContentPresenter 承载文字，其自动生成的 TextBlock 会被那条隐式样式覆盖 Foreground
-         （Setter 优先级低于隐式样式、继承也压不住），暗色主题下就会出现白底白字。
-         因此这里必须自定义模板，并在模板内部给 TextBlock 显式赋 Foreground（模板内赋值优先级高于隐式样式）。
-         注意：文字由 TextBlock 渲染，ToolTip 内容请使用字符串；若要放控件，需改回 ContentPresenter 并自行处理前景色。 -->
+    <!-- 该ToolTip仅支持字符串（应该没有往ToolTip里放其他控件的需求吧（？ -->
     <Style TargetType="ToolTip">
         <Setter Property="Background" Value="{DynamicResource ToolTipBackgroundColor}"/>
         <Setter Property="Foreground" Value="{DynamicResource ToolTipForegroundColor}"/>

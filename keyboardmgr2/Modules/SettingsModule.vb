@@ -1,4 +1,4 @@
-﻿'存储、修改、读取及删除应用程序设置。
+'存储、修改、读取及删除应用程序设置。
 Imports System.Linq
 Imports Microsoft.Win32
 
@@ -141,3 +141,37 @@ Module SettingsModule
     End Function
 
 End Module
+
+
+'将选项页杂项封装，同时方便比对前后更改以判断是否需要保存
+Public Class SettingsModel
+    Public theme As ThemeComboBox
+    Public floatingWindowTopmost As FloatingWindowTopmostOrNot
+    Public tabShowOnLoad As TabShowOnLoad
+
+End Class
+
+Public Enum ThemeComboBox
+    Auto
+    Light
+    Dark
+End Enum
+
+Public Enum FloatingWindowTopmostOrNot
+    Auto
+    Always
+    Never
+End Enum
+
+Public Enum TabShowOnLoad
+    WelcomePage
+    RapidClickPage
+    ContinueSendPage
+    RelaxPage '摸鱼
+    RecordPage
+    ScriptPage
+    OptionsPage
+    AboutPage
+End Enum
+
+
