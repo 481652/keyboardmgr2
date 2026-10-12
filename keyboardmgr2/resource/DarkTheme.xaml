@@ -6,7 +6,7 @@
     <!-- “关于”界面的图标 -->
     <BitmapImage x:Key="aboutIcon" UriSource="/keyboardmgr2;Component/Resource/icondark.png"/>
     <!-- 窗体资源 -->
-    <SolidColorBrush x:Key="backgroundColor1" Color="#272727"/>
+    <SolidColorBrush x:Key="backgraoundColor1" Color="#272727"/>
     <SolidColorBrush x:Key="foregroundColor1" Color="White"/>
     <SolidColorBrush x:Key="ControlFillColor" Color="#B82D2D2D"/>
     <SolidColorBrush x:Key="CardFillColor" Color="#A6333333"/>
@@ -92,6 +92,10 @@
     <SolidColorBrush x:Key="ButtonDisabledBack" Color="#3A3A3A"/>
     <SolidColorBrush x:Key="ButtonDisabledBorder" Color="#484848"/>
     <SolidColorBrush x:Key="ButtonDisabledFore" Color="#B5B5B5"/>
+    <!-- ToolTip 前景色，边框，背景色 -->
+    <SolidColorBrush x:Key="ToolTipBackgroundColor" Color="#FF2B2B2B"/>
+    <SolidColorBrush x:Key="ToolTipForegroundColor" Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="ToolTipBorderColor" Color="#33FFFFFF"/>
     <!-- 定义按钮的样式 -->
     <Style x:Key="DefaultButton" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource ButtonBackgroundColor}" />
@@ -131,6 +135,37 @@
         <Setter Property="Background" Value="{DynamicResource AccentColor}"/>
         <Setter Property="Foreground" Value="White"/>
         <Setter Property="BorderBrush" Value="{DynamicResource AccentColor}"/>
+    </Style>
+
+    <!-- ToolTip 资源：
+         本主题里的 <Style TargetType="TextBlock"> 是应用级隐式样式，会渗入 ToolTip 这棵独立的 Popup 树。
+         若模板用 ContentPresenter 承载文字，其自动生成的 TextBlock 会被那条隐式样式覆盖 Foreground
+         （Setter 优先级低于隐式样式、继承也压不住），暗色主题下就会出现白底白字。
+         因此这里必须自定义模板，并在模板内部给 TextBlock 显式赋 Foreground（模板内赋值优先级高于隐式样式）。
+         注意：文字由 TextBlock 渲染，ToolTip 内容请使用字符串；若要放控件，需改回 ContentPresenter 并自行处理前景色。 -->
+    <Style TargetType="ToolTip">
+        <Setter Property="Background" Value="{DynamicResource ToolTipBackgroundColor}"/>
+        <Setter Property="Foreground" Value="{DynamicResource ToolTipForegroundColor}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource ToolTipBorderColor}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="9,6"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <TextBlock Text="{TemplateBinding Content}"
+                                   Foreground="{TemplateBinding Foreground}"
+                                   TextWrapping="Wrap"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- 工具栏资源 -->
