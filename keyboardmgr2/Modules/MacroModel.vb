@@ -28,4 +28,7 @@ Public Class KbmrRecording
     Public Property DurationMs As Long
     Public Property CreatedUtc As DateTime
     Public Property Events As New List(Of KbmrEvent)
+    '历史列表只读取文件头；真正解码事件时再设为 True。
+    Public Property EventsLoaded As Boolean
+    Public Property EventCount As Integer
 End Class
