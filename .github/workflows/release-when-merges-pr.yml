@@ -1,0 +1,175 @@
+name: Release when PR merged
+
+env:
+  SOLUTION: keyboardmgr2\keyboardmgr2.sln
+  CONFIGURATION: Release
+  PLATFORM_TOOLSET: v143
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '仅测试，不创建 Release'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+# 基本照抄dev-release.yml，秉承能跑就不要动原则（）
+jobs:
+  build:
+    # 合并PR触发
+    if: github.event.pull_request.merged == true
+    runs-on: windows-2022
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref || github.ref }}
+
+      - name: Resolve target commit
+        id: target
+        shell: pwsh
+        run: |
+          # 解析打tag的提交
+          $sha = (git rev-parse HEAD).Trim()
+          Write-Host "发布提交: $sha"
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        run: nuget restore "$env:SOLUTION"
+
+      - name: Compute version
+        id: version
+        shell: pwsh
+        run: |
+          $assemblyInfo = "keyboardmgr2\My Project\AssemblyInfo.vb"
+          $content = [System.IO.File]::ReadAllText((Resolve-Path $assemblyInfo))
+          $match = [regex]::Match($content, 'AssemblyVersion\("(\d+)\.(\d+)\.(\d+)\.(\d+)"\)')
+          if (-not $match.Success) { throw "无法从 AssemblyInfo.vb 解析版本号" }
+          $version = "{0}.{1}.{2}.{3}" -f $match.Groups[1].Value, $match.Groups[2].Value, $match.Groups[3].Value, $match.Groups[4].Value
+          if ($match.Groups[4].Value -ne "0") {
+            Write-Warning "AssemblyVersion 第四段非零，版本号是否写错了？"
+          }
+          Write-Host "正式版版本: $version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Decide whether to publish
+        id: decide
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $tag = $version
+          $repo = "${{ github.repository }}"
+          $dryRun = ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.dry_run }}" -eq "true")
+
+          # 新版本必须高于当前正式版，否则说明版本号没升、或合并了落后的分支
+          $prevTag = (& gh api "repos/$repo/releases/latest" --jq .tag_name 2>$null)
+          if ($LASTEXITCODE -ne 0) { $prevTag = $null } else { $prevTag = "$prevTag".Trim().TrimStart([char]'v', [char]'V') }
+          if ([string]::IsNullOrWhiteSpace($prevTag)) {
+            Write-Host "找不到已发布的正式版，按首个正式版处理了"
+          } else {
+            Write-Host "当前正式版: $prevTag -> 新版本: $version"
+            $prevVersion = $null
+            if (-not [version]::TryParse($prevTag, [ref]$prevVersion)) {
+              Write-Warning "当前正式版 tag 无法解析为版本号（$prevTag），跳过递进校验"
+            } elseif ([version]$version -le $prevVersion -and -not $dryRun) {
+              throw "新版本 $version 不大于当前正式版 $prevTag。是否忘记改动AssemblyVersion？"
+            }
+          }
+          "prev_tag=$prevTag" >> $env:GITHUB_OUTPUT
+
+          # 同一版本不能重复发版,即tag唯一
+          gh release view $tag *> $null
+          $exists = ($LASTEXITCODE -eq 0)
+          if ($exists -and -not $dryRun) {
+            throw "版本 $tag 已经发布过。请提升 AssemblyVersion 后再合并。"
+          }
+
+          $publishFlag = if ($dryRun) { 0 } else { 1 }
+          Write-Host "版本=$tag 已存在=$exists 试运行=$dryRun 需要发布=$publishFlag"
+          "need_publish=$publishFlag" >> $env:GITHUB_OUTPUT
+
+      - name: Build (Release)
+        shell: pwsh
+        run: |
+          msbuild "$env:SOLUTION" /t:Rebuild /p:Configuration="$env:CONFIGURATION" /p:Platform="Any CPU" /p:PlatformToolset="$env:PLATFORM_TOOLSET" /m /v:minimal
+
+      - name: Package release archive
+        id: package
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $outputDir = "keyboardmgr2\bin\Release"
+          if (-not (Test-Path -LiteralPath $outputDir)) { throw "未找到构建输出目录: $outputDir" }
+
+          # 更新模块要求压缩包内“有且仅有一个 EXE”，即主程序 keyboardmgr2.exe
+          $exes = @(Get-ChildItem -LiteralPath $outputDir -Filter *.exe -Recurse -File)
+          if ($exes.Count -ne 1 -or $exes[0].BaseName -ne "keyboardmgr2") {
+            throw "构建输出中的 EXE 数量/名称不符合更新模块要求: $($exes.Name -join ', ')"
+          }
+
+          # 资产名
+          $zipName = "$version.zip"
+          if (Test-Path -LiteralPath $zipName) { Remove-Item -LiteralPath $zipName -Force }
+          Compress-Archive -Path (Join-Path $outputDir '*') -DestinationPath $zipName -CompressionLevel Optimal
+          Write-Host "已生成 $zipName ($([math]::Round((Get-Item $zipName).Length / 1MB, 2)) MB)"
+          "zip=$zipName" >> $env:GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        if: steps.decide.outputs.need_publish == '1'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $tag = $version
+          $zip = "${{ steps.package.outputs.zip }}"
+          $repo = "${{ github.repository }}"
+          $commit = "${{ steps.target.outputs.sha }}"
+
+          # 覆盖其间所有 dev 改动
+          $prev = "${{ steps.decide.outputs.prev_tag }}"
+
+          # 生成更新日志并本地化
+          $apiArgs = @("api", "repos/$repo/releases/generate-notes", "-f", "tag_name=$tag", "-f", "target_commitish=$commit")
+          if (-not [string]::IsNullOrWhiteSpace($prev)) { $apiArgs += @("-f", "previous_tag_name=$prev") }
+          $lines = @(& gh @apiArgs --jq .body)
+          $lines = $lines -replace "`r$", ""
+          $body = ($lines -join "`n").Trim()
+          if ([string]::IsNullOrWhiteSpace($body)) { $body = "本次发布暂无变更。" }
+
+          $body = $body -replace '(?m)^## What''s Changed$', '### 更新日志'
+          $body = $body -replace '(?m)^## New Contributors$', '### 新贡献者'
+          $body = $body -replace '(?m)^\* (.+) by (@\S+) in (\S+)$', '* $1 （$2 于 $3 更改）'
+          $body = $body -replace '(?m)^\* (@\S+) made their first contribution in (\S+)$', '* $1 首次贡献于 $2'
+          $body = $body -replace '\*\*Full Changelog\*\*: (\S+)', '**浏览完整更新**: $1'
+
+          $notesPath = Join-Path $PWD "release-notes.md"
+          [System.IO.File]::WriteAllText($notesPath, $body, (New-Object System.Text.UTF8Encoding($false)))
+
+          
+          gh release create $tag $zip `
+            --title "正式版$version" `
+            --target $commit `
+            --latest `
+            --notes-file $notesPath

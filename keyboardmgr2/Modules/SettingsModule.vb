@@ -143,35 +143,51 @@ Module SettingsModule
 End Module
 
 
-'将选项页杂项封装，同时方便比对前后更改以判断是否需要保存
-Public Class SettingsModel
-    Public theme As ThemeComboBox
-    Public floatingWindowTopmost As FloatingWindowTopmostOrNot
-    Public tabShowOnLoad As TabShowOnLoad
+''将选项页杂项封装，同时方便比对前后更改以判断是否需要保存
+'Public Class SettingsModel
+'    Public theme As ThemeComboBox
+'    Public floatingWindowTopmost As FloatingWindowTopmostOrNot
+'    Public tabShowOnLoad As TabShowOnLoad
+'    Public opCore As OpCore
 
-End Class
+'End Class
 
-Public Enum ThemeComboBox
-    Auto
-    Light
-    Dark
-End Enum
+'Public Enum ContinueSendMode
+'    HotKey
+'    Button
+'    Auto
+'End Enum
+'Public Enum ContinueSendKey
+'    Shift_Enter
+'    Enter
+'End Enum
+'Public Enum ThemeComboBox
+'    Auto
+'    Light
+'    Dark
+'End Enum
 
-Public Enum FloatingWindowTopmostOrNot
-    Auto
-    Always
-    Never
-End Enum
+'Public Enum FloatingWindowTopmostOrNot
+'    Auto
+'    Always
+'    Never
+'End Enum
 
-Public Enum TabShowOnLoad
-    WelcomePage
-    RapidClickPage
-    ContinueSendPage
-    RelaxPage '摸鱼
-    RecordPage
-    ScriptPage
-    OptionsPage
-    AboutPage
-End Enum
+'Public Enum TabShowOnLoad
+'    WelcomePage
+'    RapidClickPage
+'    ContinueSendPage
+'    RelaxPage '摸鱼
+'    RecordPage
+'    ScriptPage
+'    OptionsPage
+'    AboutPage
+'End Enum
+
+'Public Enum OpCore
+'    Auto
+'    DotNet
+'    CPP
+'End Enum
 
 
