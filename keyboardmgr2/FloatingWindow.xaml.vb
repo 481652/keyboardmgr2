@@ -4,6 +4,7 @@ Imports System.Timers
 Imports System.Windows.Forms
 Imports System.Windows.Interop
 Imports System.Windows.Media.Animation
+Imports System.Windows.Threading
 
 Public Class FloatingWindow
     Inherits Window
@@ -28,37 +29,6 @@ Public Class FloatingWindow
     Private Const WS_EX_TOOLWINDOW As Integer = &H80
     Private Const WS_EX_APPWINDOW As Integer = &H40000
     Private Const WS_EX_NOACTIVATE As Integer = &H8000000
-
-    <StructLayout(LayoutKind.Sequential)>
-    Private Structure NativePoint
-        Public X As Integer
-        Public Y As Integer
-    End Structure
-
-    <StructLayout(LayoutKind.Sequential)>
-    Private Structure NativeRect
-        Public Left As Integer
-        Public Top As Integer
-        Public Right As Integer
-        Public Bottom As Integer
-    End Structure
-
-    <DllImport("user32.dll")>
-    Private Shared Function GetCursorPos(ByRef point As NativePoint) As Boolean
-    End Function
-
-    <DllImport("user32.dll")>
-    Private Shared Function GetWindowRect(hwnd As IntPtr, ByRef rect As NativeRect) As Boolean
-    End Function
-
-    <DllImport("user32.dll")>
-    Private Shared Function SetWindowPos(hwnd As IntPtr, insertAfter As IntPtr, x As Integer, y As Integer,
-                                         width As Integer, height As Integer, flags As UInteger) As Boolean
-    End Function
-
-    Private Const SWP_NOSIZE As UInteger = &H1
-    Private Const SWP_NOZORDER As UInteger = &H4
-    Private Const SWP_NOACTIVATE As UInteger = &H10
 
 #End Region
 
@@ -247,7 +217,7 @@ Public Class FloatingWindow
             Sub()
                 Dispatcher.BeginInvoke(New Action(
                     Sub()
-                        If FloatingWindowState = 2 AndAlso Not IsPointerOverWindow() Then ScheduleFold()
+                        If FloatingWindowState = 2 AndAlso Not IsMouseOver Then ScheduleFold()
                     End Sub))
             End Sub)
     End Sub
@@ -255,11 +225,6 @@ Public Class FloatingWindow
     Public Sub ApplyDisplayMode(mode As Byte)
         FloatingWindowState = mode
         CancelFoldTimer()
-        If mode = 2 Then
-            pointerPollTimer.Change(0, 100)
-        Else
-            pointerPollTimer.Change(Threading.Timeout.Infinite, Threading.Timeout.Infinite)
-        End If
         Select Case mode
             Case 0
                 animationVersion += 1
@@ -277,7 +242,7 @@ Public Class FloatingWindow
                     Sub()
                         Dispatcher.BeginInvoke(New Action(
                             Sub()
-                                If FloatingWindowState = 2 AndAlso Not IsPointerOverWindow() Then ScheduleFold()
+                                If FloatingWindowState = 2 AndAlso Not IsMouseOver Then ScheduleFold()
                             End Sub))
                     End Sub)
         End Select
@@ -288,10 +253,7 @@ Public Class FloatingWindow
     Private isClosing As Boolean = False
     Private animationVersion As Integer = 0
     Private foldTargeted As Boolean = True
-    Private pointerPollTimer As Threading.Timer
-    Private foldDelayTimer As Threading.Timer
-    Private floatingHwnd As IntPtr = IntPtr.Zero
-    Private pointerWasOver As Boolean = False
+    Private foldDelayTimer As DispatcherTimer
     Private isJellyBouncePlaying As Boolean = False
 
     Private ReadOnly Property FoldedTop As Double
@@ -303,7 +265,10 @@ Public Class FloatingWindow
 
     Public Sub New()
         InitializeComponent()
-        pointerPollTimer = New Threading.Timer(AddressOf PointerPollTimer_Tick, Nothing, Threading.Timeout.Infinite, Threading.Timeout.Infinite)
+        foldDelayTimer = New DispatcherTimer(DispatcherPriority.Background) With {
+            .Interval = TimeSpan.FromSeconds(3)
+        }
+        AddHandler foldDelayTimer.Tick, AddressOf FoldDelayTimer_Tick
         Width = 800
         Height = 50
         WindowStyle = WindowStyle.None
@@ -404,69 +369,26 @@ Public Class FloatingWindow
 
 #Region "Detecting mouse"
     Private Sub CancelFoldTimer()
-        foldDelayTimer?.Dispose()
-        foldDelayTimer = Nothing
-        'animationVersion += 1
-        'Dim currentTop As Double = Top
-        'BeginAnimation(TopProperty, Nothing)
-        'Top = currentTop
+        foldDelayTimer.Stop()
     End Sub
 
     Private Sub ScheduleFold()
-        If FloatingWindowState <> 2 OrElse IsPointerOverWindow() Then Return
-        foldDelayTimer?.Dispose()
-        foldDelayTimer = New Threading.Timer(
-            Sub()
-                If floatingHwnd = IntPtr.Zero OrElse IsPointerOverWindow() Then Return
-                Dim rect As NativeRect
-                If GetWindowRect(floatingHwnd, rect) Then
-                    'Dim foldedY As Integer = -(rect.Bottom - rect.Top) + 8
-                    'SetWindowPos(floatingHwnd, IntPtr.Zero, rect.Left, foldedY, 0, 0, SWP_NOSIZE Or SWP_NOZORDER Or SWP_NOACTIVATE)
-                    foldTargeted = True
-                    Dispatcher.BeginInvoke(New Action(
-                        Sub()
-                            'animationVersion += 1
-                            'BeginAnimation(TopProperty, Nothing)
-                            'Top = FoldedTop
-                            isFloatingWindowFolded = True
-                            MoveTo(-40, True)
-                        End Sub))
-                End If
-            End Sub, Nothing, TimeSpan.FromSeconds(3), Threading.Timeout.InfiniteTimeSpan)
+        If FloatingWindowState <> 2 OrElse IsMouseOver Then Return
+        foldDelayTimer.Stop()
+        foldDelayTimer.Start()
     End Sub
 
-    Private Sub PointerPollTimer_Tick(state As Object)
-        If floatingHwnd = IntPtr.Zero Then Return
-        Dim pointerOver As Boolean = IsPointerOverWindow()
-        If pointerOver = pointerWasOver Then Return
-        pointerWasOver = pointerOver
-
-        If Not pointerOver Then
-            Dispatcher.BeginInvoke(New Action(
-                Sub()
-                    If FloatingWindowState = 2 AndAlso Not foldTargeted Then ScheduleFold()
-                End Sub))
-            Return
-        End If
-
-        Dispatcher.BeginInvoke(New Action(
-            Sub()
-                If FloatingWindowState = 2 Then
-                    MoveTo(0, False)
-                End If
-            End Sub))
+    Private Sub FoldDelayTimer_Tick(sender As Object, e As EventArgs)
+        foldDelayTimer.Stop()
+        If FloatingWindowState <> 2 OrElse IsMouseOver Then Return
+        foldTargeted = True
+        MoveTo(-40, True)
     End Sub
-
-    Private Function IsPointerOverWindow() As Boolean
-        Dim point As NativePoint
-        Dim rect As NativeRect
-        If floatingHwnd = IntPtr.Zero OrElse Not GetCursorPos(point) OrElse Not GetWindowRect(floatingHwnd, rect) Then Return False
-        Return point.X >= rect.Left AndAlso point.X < rect.Right AndAlso point.Y >= rect.Top AndAlso point.Y < rect.Bottom
-    End Function
 
     Private Sub Window_MouseEnter(sender As Object, e As Input.MouseEventArgs)
         If FloatingWindowState = 2 Then
             CancelFoldTimer()
+            If foldTargeted OrElse Top < 0 Then MoveTo(0, False)
         End If
     End Sub
 
@@ -506,6 +428,7 @@ Public Class FloatingWindow
     End Sub
 
     Private Sub Window_Closing(sender As Object, e As System.ComponentModel.CancelEventArgs)
+        CancelFoldTimer()
         If Not isClosing Then
             '取消默认关闭行为
             e.Cancel = True
@@ -521,7 +444,6 @@ Public Class FloatingWindow
 
         '设置窗体样式，防止在ALT+TAB中显示
         Dim hwnd As IntPtr = New System.Windows.Interop.WindowInteropHelper(Me).Handle
-        floatingHwnd = hwnd
         Dim exStyle As Integer = GetWindowLong(hwnd, GWL_EXSTYLE)
         SetWindowLong(hwnd, GWL_EXSTYLE, (exStyle Or WS_EX_TOOLWINDOW Or WS_EX_NOACTIVATE) And Not WS_EX_APPWINDOW)
         '设置消息过滤器
@@ -533,8 +455,15 @@ Public Class FloatingWindow
         StopApp()
     End Sub
 
-    Public Sub StopApp() '退出程序方法
+    Public Async Sub StopApp() '退出程序方法
         If LoafModule.InLoafMode Then LoafModule.ExitLoafMode()
+        If MainWindow1.Instance IsNot Nothing Then
+            MainWindow1.Instance.StopClick()
+            MainWindow1.Instance.StopSend()
+            MainWindow1.Instance.StopRecordingPlayback()
+            ScriptRunner.StopScript()
+            Await MainWindow1.Instance.StopRecordingAndSaveAsync()
+        End If
         Close()
         Dim timer As New System.Timers.Timer(1000) '在悬浮窗缩回后0.5秒时退出
         AddHandler timer.Elapsed, AddressOf Timer_Elapsed
@@ -552,14 +481,14 @@ Public Class FloatingWindow
         StopActions()
     End Sub
 
-    Private Sub StopActions() '停止连点连发等
+    Private Async Sub StopActions() '停止连点连发等
         If LoafModule.InLoafMode Then LoafModule.ExitLoafMode()
         MainWindow1.Instance.StopClick()
         MainWindow1.Instance.StopSend()
-        MainWindow1.Instance.StopRecordingAndSave()
-        MacroPlayer.StopPlayback()
+        MainWindow1.Instance.StopRecordingPlayback()
         ScriptRunner.StopScript()
         ScriptHost.ForceUnblockInput()
+        Await MainWindow1.Instance.StopRecordingAndSaveAsync()
         MainWindow1.Instance.Show()
         FloatingWindow_Reset()
     End Sub

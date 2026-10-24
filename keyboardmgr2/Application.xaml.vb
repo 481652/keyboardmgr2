@@ -57,7 +57,7 @@ Class Application
 
         isPrimaryInstance = createdNew
 
-        Dim requestedFile As String = GetRequestedListFile()
+        Dim requestedFile As String = GetRequestedAssociatedFile()
         Dim isAutoStart As Boolean = HasCommandLineArgument(AutoStartArgument)
         If Not isPrimaryInstance Then
             '登录时若程序已经运行，不应把原本隐藏的主窗口弹出来。
@@ -209,12 +209,13 @@ Class Application
         End Try
     End Sub
 
-    Private Function GetRequestedListFile() As String
+    Private Function GetRequestedAssociatedFile() As String
         Dim arguments As String() = Environment.GetCommandLineArgs()
         For Each argument As String In arguments.Skip(1)
             Dim extension As String = Path.GetExtension(argument)
             If String.Equals(extension, ".lcslst", StringComparison.OrdinalIgnoreCase) OrElse
-               String.Equals(extension, ".lcslst2", StringComparison.OrdinalIgnoreCase) Then Return Path.GetFullPath(argument)
+               String.Equals(extension, ".lcslst2", StringComparison.OrdinalIgnoreCase) OrElse
+               String.Equals(extension, ".kbmr", StringComparison.OrdinalIgnoreCase) Then Return Path.GetFullPath(argument)
         Next
         Return Nothing
     End Function
@@ -268,6 +269,7 @@ Class Application
             Dim executablePath As String = Diagnostics.Process.GetCurrentProcess().MainModule.FileName
             RegisterFileType(".lcslst", "keyboardmgr2.lcslst", "LCS经典列表连发文件", executablePath)
             RegisterFileType(".lcslst2", "keyboardmgr2.lcslst2", "LCS新版列表连发文件", executablePath)
+            RegisterFileType(".kbmr", "keyboardmgr2.kbmr", "键鼠管家录制文件", executablePath)
             SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, IntPtr.Zero, IntPtr.Zero)
         Catch
             '文件关联失败不应阻止主程序启动。

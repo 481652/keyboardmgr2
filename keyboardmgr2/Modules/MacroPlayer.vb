@@ -2,16 +2,23 @@
 Imports System.Threading
 
 Module MacroPlayer
-    Public Event PlaybackStopped()
+    Public Event PlaybackStopped(recording As KbmrRecording)
 
     Private playbackThread As Thread
-    Private stopFlag As Boolean
+    Private stopFlag As Integer
+    Private playbackGeneration As Integer
     Private playing As Boolean
+    Private currentRecording As KbmrRecording
     Private ReadOnly stateLock As New Object()
+    Private ReadOnly inputStateLock As New Object()
+    Private ReadOnly pressedKeys As New HashSet(Of UShort)()
+    Private ReadOnly pressedMouseButtons As New HashSet(Of Integer)()
 
     Public ReadOnly Property IsPlaying As Boolean
         Get
-            Return playing
+            SyncLock stateLock
+                Return playing
+            End SyncLock
         End Get
     End Property
 
@@ -19,88 +26,141 @@ Module MacroPlayer
         If recording Is Nothing OrElse recording.Events Is Nothing OrElse recording.Events.Count = 0 Then Return
         StopPlayback()
         If speed <= 0 Then speed = 1.0
-        stopFlag = False
-        playing = True
-        Dim plan As List(Of KbmrEvent) = BuildPlaybackEvents(recording, smoothMove)
-        playbackThread = New Thread(Sub() PlaybackLoop(plan, speed, loopPlayback, blockInput)) With {.IsBackground = True, .Name = "KbmrPlayer"}
+        Dim generation As Integer = Threading.Interlocked.Increment(playbackGeneration)
+        Threading.Interlocked.Exchange(stopFlag, 0)
+        SyncLock inputStateLock
+            pressedKeys.Clear()
+            pressedMouseButtons.Clear()
+        End SyncLock
+        SyncLock stateLock
+            playing = True
+            currentRecording = recording
+        End SyncLock
+        playbackThread = New Thread(Sub() PlaybackLoop(recording, speed, loopPlayback, smoothMove, blockInput, generation)) With {.IsBackground = True, .Name = "KbmrPlayer"}
         playbackThread.Start()
     End Sub
 
     Public Sub StopPlayback()
-        stopFlag = True
+        Threading.Interlocked.Exchange(stopFlag, 1)
+        Dim generation As Integer = Threading.Volatile.Read(playbackGeneration)
         Dim thread As Thread = playbackThread
         If thread IsNot Nothing AndAlso thread.IsAlive AndAlso thread IsNot Thread.CurrentThread Then
-            thread.Join(2000)
+            thread.Join()
         End If
+        ReleasePlaybackInputs()
         playbackThread = Nothing
-        FinishPlayback()
+        FinishPlayback(generation)
     End Sub
 
-    Private Sub FinishPlayback()
+    Private Sub FinishPlayback(generation As Integer)
+        If generation <> Threading.Volatile.Read(playbackGeneration) Then Return
+        ReleasePlaybackInputs()
         Dim shouldRaise As Boolean = False
+        Dim stoppedRecording As KbmrRecording = Nothing
         SyncLock stateLock
-            If playing Then
+            If generation = Threading.Volatile.Read(playbackGeneration) AndAlso playing Then
                 playing = False
                 shouldRaise = True
+                stoppedRecording = currentRecording
+                currentRecording = Nothing
             End If
         End SyncLock
         ScriptHost.ForceUnblockInput()
-        If shouldRaise Then RaiseEvent PlaybackStopped()
+        If shouldRaise Then RaiseEvent PlaybackStopped(stoppedRecording)
     End Sub
 
-    Private Sub PlaybackLoop(plan As List(Of KbmrEvent), speed As Double, loopPlayback As Boolean, blockInput As Boolean)
-        If blockInput Then ScriptHost.SetBlockInput(True)
+    Private Sub PlaybackLoop(recording As KbmrRecording, speed As Double, loopPlayback As Boolean,
+                             smoothMove As Boolean, blockInput As Boolean, generation As Integer)
         Try
+            If blockInput Then ScriptHost.SetBlockInput(True)
             Dim maxLoops As Integer = If(loopPlayback, 10000, 1)
             For iteration As Integer = 1 To maxLoops
                 Dim clock As Diagnostics.Stopwatch = Diagnostics.Stopwatch.StartNew()
-                For Each item As KbmrEvent In plan
-                    If stopFlag Then Return
+                For Each item As KbmrEvent In EnumeratePlaybackEvents(recording, smoothMove)
+                    If IsPlaybackStopped(generation) Then Return
                     Dim target As Long = CLng(item.OffsetMs / speed)
                     While clock.ElapsedMilliseconds < target
-                        If stopFlag Then Return
+                        If IsPlaybackStopped(generation) Then Return
                         Dim remain As Long = target - clock.ElapsedMilliseconds
                         Thread.Sleep(CInt(Math.Min(remain, 10)))
                     End While
-                    ExecuteEvent(item)
+                    ExecuteEvent(item, generation)
                 Next
-                If stopFlag Then Return
+                If IsPlaybackStopped(generation) Then Return
             Next
         Catch
         Finally
-            FinishPlayback()
+            FinishPlayback(generation)
         End Try
     End Sub
 
-    Private Sub ExecuteEvent(item As KbmrEvent)
+    Private Function IsPlaybackStopped(generation As Integer) As Boolean
+        Return generation <> Threading.Volatile.Read(playbackGeneration) OrElse Threading.Volatile.Read(stopFlag) <> 0
+    End Function
+
+    Private Sub ExecuteEvent(item As KbmrEvent, generation As Integer)
         Select Case item.Kind
             Case KbmrEventKind.KeyDown
-                OpEngine.KeyDown(item.Vk)
+                SyncLock inputStateLock
+                    If IsPlaybackStopped(generation) Then Return
+                    Dim sent As Boolean = OpEngine.KeyDown(item.Vk)
+                    If IsPlaybackStopped(generation) Then
+                        If sent Then OpEngine.KeyUp(item.Vk)
+                    ElseIf sent Then
+                        pressedKeys.Add(item.Vk)
+                    End If
+                End SyncLock
             Case KbmrEventKind.KeyUp
-                OpEngine.KeyUp(item.Vk)
+                SyncLock inputStateLock
+                    If IsPlaybackStopped(generation) Then Return
+                    If OpEngine.KeyUp(item.Vk) Then pressedKeys.Remove(item.Vk)
+                End SyncLock
             Case KbmrEventKind.MouseDown
-                MouseButtonEvent(item.Button, True, item.X, item.Y)
+                MouseButtonEvent(item.Button, True, item.X, item.Y, generation)
             Case KbmrEventKind.MouseUp
-                MouseButtonEvent(item.Button, False, item.X, item.Y)
+                MouseButtonEvent(item.Button, False, item.X, item.Y, generation)
             Case KbmrEventKind.MouseMove
-                OpEngine.MouseMove(item.X, item.Y)
+                If Not IsPlaybackStopped(generation) Then OpEngine.MouseMove(item.X, item.Y)
             Case KbmrEventKind.Wheel
-                UserInputHandler.SendMouseWheelInput(item.Delta)
+                If Not IsPlaybackStopped(generation) Then UserInputHandler.SendMouseWheelInput(item.Delta)
         End Select
     End Sub
 
-    Private Sub MouseButtonEvent(button As Byte, down As Boolean, x As Integer, y As Integer)
-        If (button = 1 OrElse button = 2 OrElse button = 3) AndAlso x >= 0 AndAlso y >= 0 Then OpEngine.MouseMove(x, y)
-        UserInputHandler.SendMouseButtonInput(CInt(button), down)
+    Private Sub MouseButtonEvent(button As Byte, down As Boolean, x As Integer, y As Integer, generation As Integer)
+        SyncLock inputStateLock
+            If IsPlaybackStopped(generation) Then Return
+            If (button = 1 OrElse button = 2 OrElse button = 3) AndAlso x >= 0 AndAlso y >= 0 Then OpEngine.MouseMove(x, y)
+            UserInputHandler.SendMouseButtonInput(CInt(button), down)
+            If down AndAlso Not IsPlaybackStopped(generation) Then
+                pressedMouseButtons.Add(CInt(button))
+            ElseIf down Then
+                UserInputHandler.SendMouseButtonInput(CInt(button), False)
+            Else
+                pressedMouseButtons.Remove(CInt(button))
+            End If
+        End SyncLock
     End Sub
 
-    '将相邻采样点之间的鼠标移动线性插值为若干中间点，使低采样频率下的回放更平滑。
-    Private Function BuildPlaybackEvents(recording As KbmrRecording, smooth As Boolean) As List(Of KbmrEvent)
-        If Not smooth Then Return recording.Events
-        Dim result As New List(Of KbmrEvent)
+    '录制可能在 KeyUp/MouseUp 之前结束；确保回放异常、停止或自然结束都不会留下输入状态。
+    Private Sub ReleasePlaybackInputs()
+        SyncLock inputStateLock
+            For Each vk As UShort In pressedKeys
+                OpEngine.KeyUp(vk)
+            Next
+            pressedKeys.Clear()
+
+            For Each button As Integer In pressedMouseButtons
+                UserInputHandler.SendMouseButtonInput(button, False)
+            Next
+            pressedMouseButtons.Clear()
+        End SyncLock
+    End Sub
+
+    '按需生成平滑中间点，避免为大型录制复制整份事件列表。
+    Private Iterator Function EnumeratePlaybackEvents(recording As KbmrRecording, smooth As Boolean) As IEnumerable(Of KbmrEvent)
         Dim previousMove As KbmrEvent = Nothing
         For Each item As KbmrEvent In recording.Events
-            If item.Kind = KbmrEventKind.MouseMove Then
+            If smooth AndAlso item.Kind = KbmrEventKind.MouseMove Then
                 If previousMove IsNot Nothing AndAlso item.OffsetMs > previousMove.OffsetMs Then
                     Dim gap As Long = item.OffsetMs - previousMove.OffsetMs
                     Dim dx As Integer = item.X - previousMove.X
@@ -113,24 +173,22 @@ Module MacroPlayer
                         If steps > 1 Then
                             For moveStep As Integer = 1 To steps - 1
                                 Dim ratio As Double = moveStep / CDbl(steps)
-                                result.Add(New KbmrEvent With {
+                                Yield New KbmrEvent With {
                                     .Kind = KbmrEventKind.MouseMove,
                                     .OffsetMs = previousMove.OffsetMs + CLng(gap * ratio),
                                     .X = CInt(previousMove.X + dx * ratio),
                                     .Y = CInt(previousMove.Y + dy * ratio)
-                                })
+                                }
                             Next
                         End If
                     End If
                 End If
-                result.Add(item)
                 previousMove = item
             Else
-                result.Add(item)
-                previousMove = Nothing
+                If smooth Then previousMove = Nothing
             End If
+            Yield item
         Next
-        Return result
     End Function
 End Module
 

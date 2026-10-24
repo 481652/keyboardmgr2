@@ -367,25 +367,43 @@ int __stdcall OpCore_TypeText(const wchar_t* text)
     {
         return 1;
     }
+    INPUT inputs[256] = {};
+    UINT count = 0;
+    auto flush = [&]() -> bool
+    {
+        if (count == 0) return true;
+        UINT requested = count;
+        UINT sent = SendInput(count, inputs, sizeof(INPUT));
+        count = 0;
+        return sent == requested;
+    };
+
     for (const wchar_t* p = text; *p; ++p)
     {
         if (*p == L'\r' || *p == L'\n')
         {
             // 回车/换行统一发送一次 Enter，跳过 \r\n 重复
             if (*p == L'\r' && p[1] == L'\n') ++p;
-            SendKeyDown(VK_RETURN);
-            SendKeyUp(VK_RETURN);
-            continue;
+            INPUT down = {};
+            down.type = INPUT_KEYBOARD;
+            down.ki.wVk = VK_RETURN;
+            inputs[count++] = down;
+            down.ki.dwFlags = KEYEVENTF_KEYUP;
+            inputs[count++] = down;
         }
-        INPUT input[2] = {};
-        input[0].type = INPUT_KEYBOARD;
-        input[0].ki.wScan = (WORD)*p;
-        input[0].ki.dwFlags = KEYEVENTF_UNICODE;
-        input[1] = input[0];
-        input[1].ki.dwFlags |= KEYEVENTF_KEYUP;
-        SendInput(2, input, sizeof(INPUT));
+        else
+        {
+            INPUT down = {};
+            down.type = INPUT_KEYBOARD;
+            down.ki.wScan = (WORD)*p;
+            down.ki.dwFlags = KEYEVENTF_UNICODE;
+            inputs[count++] = down;
+            down.ki.dwFlags |= KEYEVENTF_KEYUP;
+            inputs[count++] = down;
+        }
+        if (count == (UINT)(sizeof(inputs) / sizeof(inputs[0])) && !flush()) return 1;
     }
-    return 0;
+    return flush() ? 0 : 1;
 }
 
 BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID)
