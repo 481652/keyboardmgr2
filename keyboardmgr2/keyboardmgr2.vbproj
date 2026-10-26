@@ -137,6 +137,7 @@
     <Compile Include="Modules\DlgModule.vb" />
     <Compile Include="Modules\LoafModule.vb" />
     <Compile Include="Modules\SettingsModule.vb" />
+    <Compile Include="Modules\SendTargetResolver.vb" />
     <Compile Include="Modules\ThemeModule.vb" />
     <Compile Include="Modules\UserInputHandler.vb" />
     <Compile Include="MyTrayicon.vb" />

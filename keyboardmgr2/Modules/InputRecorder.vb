@@ -65,12 +65,14 @@ Module InputRecorder
             .ScreenWidth = CInt(Math.Round(SystemParameters.PrimaryScreenWidth)),
             .ScreenHeight = CInt(Math.Round(SystemParameters.PrimaryScreenHeight)),
             .DurationMs = watch.ElapsedMilliseconds,
-            .CreatedUtc = DateTime.UtcNow
+            .CreatedUtc = DateTime.UtcNow,
+            .EventsLoaded = True
         }
         SyncLock eventsLock
-            result.Events.AddRange(events)
+            result.Events = events
+            result.EventCount = events.Count
+            events = Nothing
         End SyncLock
-        events = Nothing
         Return result
     End Function
 

@@ -185,12 +185,18 @@ Module UserInputHandler
 
     Private Sub SendInputEvents(inputList As List(Of Input))
         If inputList.Count = 0 Then Return
-        For Each inputEvent As Input In inputList
-            Dim inputs() As Input = {inputEvent}
-            If SendInput(1, inputs, Marshal.SizeOf(GetType(Input))) <> 1 Then
+        Const MaximumBatchSize As Integer = 256
+        Dim inputSize As Integer = Marshal.SizeOf(GetType(Input))
+        Dim offset As Integer = 0
+        While offset < inputList.Count
+            Dim count As Integer = Math.Min(MaximumBatchSize, inputList.Count - offset)
+            Dim inputs(count - 1) As Input
+            inputList.CopyTo(offset, inputs, 0, count)
+            If SendInput(CUInt(count), inputs, inputSize) <> CUInt(count) Then
                 Throw New ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "无法向目标窗口发送按键")
             End If
-        Next
+            offset += count
+        End While
     End Sub
 
     Private Sub AddVirtualKeyInputs(inputList As List(Of Input), virtualKey As UShort)
@@ -280,41 +286,115 @@ Module UserInputHandler
     '指定 targetHwnd 时以该窗口内的控件为准（不依赖前台焦点），否则使用当前前台/焦点控件。
 #Region "DirectTextInsert"
 
+    Private ReadOnly uiaCacheLock As New Object()
+    Private cachedUiaTargetHwnd As IntPtr = IntPtr.Zero
+    Private cachedInputElement As AutomationElement
+    Private cachedSendButton As AutomationElement
+
     Public Function InsertTextToTarget(text As String, Optional targetHwnd As IntPtr = Nothing, Optional inputPointX As Integer = Integer.MinValue, Optional inputPointY As Integer = Integer.MinValue) As Boolean
         If String.IsNullOrEmpty(text) Then Return True
 
         If targetHwnd <> IntPtr.Zero Then
-            '0. 用户点选过输入框位置：直接点击该位置后模拟键盘输入（最可靠）
             If inputPointX <> Integer.MinValue AndAlso TryClickPointAndType(text, targetHwnd, inputPointX, inputPointY) Then Return True
-            '1. UI Automation：目标窗口内定位编辑控件并直接写入
             If TrySetTextViaUia(text, targetHwnd) Then Return True
-            '2. WM_SETTEXT：向目标窗口线程的焦点控件直接设置文本
             If TrySetTextViaWmSettext(text, targetHwnd) Then Return True
-            '3. 点击定位：找到可能的输入框，点击获得焦点后模拟键盘输入（兼容不支持 UIA 写入的应用）
             If TryClickAndType(text, targetHwnd) Then Return True
-            '4. 回退：操作内核模拟键盘输入（依赖目标已激活且已有焦点）
+            If Not SendTargetResolver.IsForegroundTarget(targetHwnd) Then Return False
             Return OpEngine.TypeText(text)
         End If
 
-        '未指定目标窗口：沿用全局焦点控件
         If TrySetTextViaUia(text, IntPtr.Zero) Then Return True
         If TrySetTextViaWmSettext(text, IntPtr.Zero) Then Return True
         Return OpEngine.TypeText(text)
     End Function
 
     '按用户点选的窗口内相对坐标点击并输入文本
-    Private Function TryClickPointAndType(text As String, targetHwnd As IntPtr, relX As Integer, relY As Integer) As Boolean
+    Private Function TryClickPointAndType(text As String, targetHwnd As IntPtr, clientX As Integer, clientY As Integer) As Boolean
         Try
-            Dim rect As RECTAPI
-            If Not GetWindowRectApi(targetHwnd, rect) Then Return False
-            Dim ax As Integer = rect.Left + relX
-            Dim ay As Integer = rect.Top + relY
-            If Not OpEngine.MouseClick(1, ax, ay) Then Return False
+            If Not SendTargetResolver.IsForegroundTarget(targetHwnd) Then Return False
+            If Not SendTargetResolver.IsPointInWindowClient(targetHwnd, clientX, clientY) Then Return False
+            Dim screenX As Integer = 0
+            Dim screenY As Integer = 0
+            If Not SendTargetResolver.TryWindowClientToScreen(targetHwnd, clientX, clientY, screenX, screenY) Then Return False
+            If Not OpEngine.MouseClick(1, screenX, screenY) Then Return False
             Threading.Thread.Sleep(80)
+            If Not SendTargetResolver.IsForegroundTarget(targetHwnd) Then Return False
             Return OpEngine.TypeText(text)
         Catch
             Return False
         End Try
+    End Function
+
+    Private Function GetCachedInputElement(targetHwnd As IntPtr) As AutomationElement
+        Dim element As AutomationElement = Nothing
+        SyncLock uiaCacheLock
+            If cachedUiaTargetHwnd = targetHwnd Then element = cachedInputElement
+        End SyncLock
+        If element IsNot Nothing AndAlso IsAutomationElementUsable(element) Then Return element
+        Return Nothing
+    End Function
+
+    Private Sub CacheInputElement(targetHwnd As IntPtr, element As AutomationElement)
+        SyncLock uiaCacheLock
+            If cachedUiaTargetHwnd <> targetHwnd Then
+                cachedUiaTargetHwnd = targetHwnd
+                cachedInputElement = Nothing
+                cachedSendButton = Nothing
+            End If
+            cachedInputElement = element
+        End SyncLock
+    End Sub
+
+    Private Sub InvalidateInputCache(targetHwnd As IntPtr)
+        SyncLock uiaCacheLock
+            If cachedUiaTargetHwnd = targetHwnd Then cachedInputElement = Nothing
+        End SyncLock
+    End Sub
+
+    Private Function GetCachedSendButton(targetHwnd As IntPtr) As AutomationElement
+        Dim element As AutomationElement = Nothing
+        SyncLock uiaCacheLock
+            If cachedUiaTargetHwnd = targetHwnd Then element = cachedSendButton
+        End SyncLock
+        If element IsNot Nothing AndAlso IsAutomationElementUsable(element) Then Return element
+        Return Nothing
+    End Function
+
+    Private Sub CacheSendButton(targetHwnd As IntPtr, element As AutomationElement)
+        SyncLock uiaCacheLock
+            If cachedUiaTargetHwnd <> targetHwnd Then
+                cachedUiaTargetHwnd = targetHwnd
+                cachedInputElement = Nothing
+                cachedSendButton = Nothing
+            End If
+            cachedSendButton = element
+        End SyncLock
+    End Sub
+
+    Private Sub InvalidateSendButtonCache(targetHwnd As IntPtr)
+        SyncLock uiaCacheLock
+            If cachedUiaTargetHwnd = targetHwnd Then cachedSendButton = Nothing
+        End SyncLock
+    End Sub
+
+    Private Function IsAutomationElementUsable(element As AutomationElement) As Boolean
+        If element Is Nothing Then Return False
+        Try
+            Dim current As AutomationElement.AutomationElementInformation = element.Current
+            If current.IsOffscreen OrElse Not current.IsEnabled Then Return False
+            Dim bounds As System.Windows.Rect = current.BoundingRectangle
+            Return Not bounds.IsEmpty AndAlso bounds.Width > 0 AndAlso bounds.Height > 0
+        Catch
+            Return False
+        End Try
+    End Function
+
+    Private Function GetOrFindInputElement(targetHwnd As IntPtr, window As AutomationElement) As AutomationElement
+        Dim cached As AutomationElement = GetCachedInputElement(targetHwnd)
+        If cached IsNot Nothing Then Return cached
+        Dim candidate As AutomationElement = FindInputElement(window)
+        If candidate IsNot Nothing Then CacheInputElement(targetHwnd, candidate)
+        Return candidate
     End Function
 
     Private Function TrySetTextViaUia(text As String, targetHwnd As IntPtr) As Boolean
@@ -322,15 +402,19 @@ Module UserInputHandler
             If targetHwnd <> IntPtr.Zero Then
                 Dim window As AutomationElement = AutomationElement.FromHandle(targetHwnd)
                 If window Is Nothing Then Return False
-                '优先目标窗口内的焦点控件，其次在窗口子树中查找最可能是输入框的控件
                 Dim focusHwnd As IntPtr = GetFocusedControlHwnd(targetHwnd)
                 If focusHwnd <> IntPtr.Zero Then
                     Dim focused As AutomationElement = AutomationElement.FromHandle(focusHwnd)
-                    If focused IsNot Nothing AndAlso TrySetElementValue(focused, text) Then Return True
+                    If focused IsNot Nothing AndAlso TrySetElementValue(focused, text) Then
+                        CacheInputElement(targetHwnd, focused)
+                        Return True
+                    End If
                 End If
-                Dim candidate As AutomationElement = FindInputElement(window)
+                Dim candidate As AutomationElement = GetOrFindInputElement(targetHwnd, window)
                 If candidate Is Nothing Then Return False
-                Return TrySetElementValue(candidate, text)
+                If TrySetElementValue(candidate, text) Then Return True
+                InvalidateInputCache(targetHwnd)
+                Return False
             End If
 
             Dim focusedGlobal As AutomationElement = AutomationElement.FocusedElement
@@ -408,9 +492,10 @@ Module UserInputHandler
     '点击输入框中心获得焦点，再用操作内核模拟键盘输入（适用于不支持 UIA 写入的应用）
     Private Function TryClickAndType(text As String, targetHwnd As IntPtr) As Boolean
         Try
+            If Not SendTargetResolver.IsForegroundTarget(targetHwnd) Then Return False
             Dim window As AutomationElement = AutomationElement.FromHandle(targetHwnd)
             If window Is Nothing Then Return False
-            Dim inputElement As AutomationElement = FindInputElement(window)
+            Dim inputElement As AutomationElement = GetOrFindInputElement(targetHwnd, window)
             If inputElement Is Nothing Then Return False
             Dim rect As System.Windows.Rect = inputElement.Current.BoundingRectangle
             If rect.IsEmpty OrElse rect.Width < 10 OrElse rect.Height < 10 Then Return False
@@ -418,8 +503,10 @@ Module UserInputHandler
             Dim cy As Integer = CInt(rect.Y + rect.Height / 2)
             If Not OpEngine.MouseClick(1, cx, cy) Then Return False
             Threading.Thread.Sleep(80)
+            If Not SendTargetResolver.IsForegroundTarget(targetHwnd) Then Return False
             Return OpEngine.TypeText(text)
         Catch
+            InvalidateInputCache(targetHwnd)
             Return False
         End Try
     End Function
@@ -453,8 +540,9 @@ Module UserInputHandler
                 hwndFocus = GetForegroundFocusedControl()
             End If
             If hwndFocus = IntPtr.Zero Then Return False
-            SendMessageText(hwndFocus, WM_SETTEXT, IntPtr.Zero, text)
-            Return True
+            Dim className As String = SendTargetResolver.GetWindowClassName(hwndFocus)
+            If String.IsNullOrEmpty(className) OrElse className.IndexOf("Edit", StringComparison.OrdinalIgnoreCase) < 0 Then Return False
+            Return SendMessageText(hwndFocus, WM_SETTEXT, IntPtr.Zero, text) <> IntPtr.Zero
         Catch
             Return False
         End Try
@@ -529,33 +617,47 @@ Module UserInputHandler
 
     '在目标窗口中查找常见名称的“发送”按钮并通过 UIA 调用（Invoke 优先，其次点击按钮中心）。
     '找到并触发返回 True，否则返回 False。
+    Private Class SendButtonCandidate
+        Public Property Element As AutomationElement
+        Public Property Bounds As System.Windows.Rect
+        Public Property Score As Double
+    End Class
+
     Public Function TryInvokeSendButton(hWnd As IntPtr) As Boolean
         If hWnd = IntPtr.Zero Then Return False
         Try
+            Dim cached As AutomationElement = GetCachedSendButton(hWnd)
+            If cached IsNot Nothing Then
+                If TryInvokeButtonElement(cached, hWnd) Then Return True
+                InvalidateSendButtonCache(hWnd)
+            End If
             Dim window As AutomationElement = AutomationElement.FromHandle(hWnd)
             If window Is Nothing Then Return False
+            Dim windowBounds As System.Windows.Rect = Nothing
+            Try
+                windowBounds = window.Current.BoundingRectangle
+            Catch
+            End Try
             Dim condition As New PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)
             Dim buttons As AutomationElementCollection = window.FindAll(TreeScope.Subtree, condition)
             If buttons Is Nothing OrElse buttons.Count = 0 Then Return False
+            Dim candidates As New List(Of SendButtonCandidate)
             For Each button As AutomationElement In buttons
-                Dim name As String = ""
                 Try
-                    name = If(button.Current.Name, "")
+                    If Not button.Current.IsEnabled OrElse button.Current.IsOffscreen Then Continue For
+                    Dim name As String = If(button.Current.Name, "")
+                    Dim rect As System.Windows.Rect = button.Current.BoundingRectangle
+                    If rect.IsEmpty OrElse rect.Width <= 0 OrElse rect.Height <= 0 Then Continue For
+                    Dim score As Double = GetSendButtonScore(name, rect, windowBounds)
+                    If score < 0 Then Continue For
+                    candidates.Add(New SendButtonCandidate With {.Element = button, .Bounds = rect, .Score = score})
                 Catch
                 End Try
-                If Not IsSendButtonName(name) Then Continue For
-                Dim pattern As Object = Nothing
-                If button.TryGetCurrentPattern(InvokePattern.Pattern, pattern) AndAlso pattern IsNot Nothing Then
-                    DirectCast(pattern, InvokePattern).Invoke()
-                    Return True
-                End If
-                Dim rect As System.Windows.Rect = Nothing
-                Try
-                    rect = button.Current.BoundingRectangle
-                Catch
-                End Try
-                If Not rect.IsEmpty AndAlso rect.Width > 0 AndAlso rect.Height > 0 Then
-                    OpEngine.MouseClick(1, CInt(rect.X + rect.Width / 2), CInt(rect.Y + rect.Height / 2))
+            Next
+            candidates.Sort(Function(a, b) b.Score.CompareTo(a.Score))
+            For Each candidate As SendButtonCandidate In candidates
+                If TryInvokeButtonElement(candidate.Element, hWnd) Then
+                    CacheSendButton(hWnd, candidate.Element)
                     Return True
                 End If
             Next
@@ -564,13 +666,55 @@ Module UserInputHandler
         Return False
     End Function
 
-    Private Function IsSendButtonName(name As String) As Boolean
-        If String.IsNullOrWhiteSpace(name) Then Return False
-        Dim keywords As String() = {"发送", "发送消息", "回复", "确定", "发表", "发布", "评论", "提交", "Send", "Submit", "Post"}
-        For Each keyword As String In keywords
-            If name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0 Then Return True
+    Private Function TryInvokeButtonElement(button As AutomationElement, targetHwnd As IntPtr) As Boolean
+        Try
+            Dim pattern As Object = Nothing
+            If button.TryGetCurrentPattern(InvokePattern.Pattern, pattern) AndAlso pattern IsNot Nothing Then
+                DirectCast(pattern, InvokePattern).Invoke()
+                Return True
+            End If
+            Dim rect As System.Windows.Rect = button.Current.BoundingRectangle
+            If rect.IsEmpty OrElse rect.Width <= 0 OrElse rect.Height <= 0 Then Return False
+            If Not SendTargetResolver.IsForegroundTarget(targetHwnd) Then Return False
+            Return OpEngine.MouseClick(1, CInt(rect.X + rect.Width / 2), CInt(rect.Y + rect.Height / 2))
+        Catch
+            Return False
+        End Try
+    End Function
+
+    Private Function GetSendButtonScore(name As String, bounds As System.Windows.Rect, windowBounds As System.Windows.Rect) As Double
+        If String.IsNullOrWhiteSpace(name) Then Return -1
+        Dim trimmed As String = name.Trim()
+        Dim excluded As String() = {"文件", "图片", "语音", "表情", "红包", "位置", "视频", "通话", "附件", "收藏", "转账", "名片", "音乐", "链接", "file", "image", "voice", "emoji", "video", "attach", "gift"}
+        For Each keyword As String In excluded
+            If trimmed.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0 Then Return -1
         Next
-        Return False
+        Dim exact As String() = {"发送", "发送消息", "send", "发送(s)", "发送（s）"}
+        Dim generic As String() = {"发送", "回复", "发表", "发布", "评论", "提交", "send", "submit", "post"}
+        Dim score As Double = 0
+        For Each keyword As String In exact
+            If String.Equals(trimmed, keyword, StringComparison.OrdinalIgnoreCase) Then
+                score += 1000
+                Exit For
+            End If
+        Next
+        Dim hasKeyword As Boolean = False
+        For Each keyword As String In generic
+            If trimmed.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0 Then
+                hasKeyword = True
+                score += 100
+                Exit For
+            End If
+        Next
+        If Not hasKeyword AndAlso score <= 0 Then Return -1
+        score += 20
+        If Not windowBounds.IsEmpty AndAlso windowBounds.Width > 0 AndAlso windowBounds.Height > 0 Then
+            Dim xRatio As Double = (bounds.Left + bounds.Width / 2 - windowBounds.Left) / windowBounds.Width
+            Dim yRatio As Double = (bounds.Top + bounds.Height / 2 - windowBounds.Top) / windowBounds.Height
+            score += Math.Max(0, Math.Min(1, xRatio)) * 10
+            score += Math.Max(0, Math.Min(1, yRatio)) * 20
+        End If
+        Return score
     End Function
 
 #End Region

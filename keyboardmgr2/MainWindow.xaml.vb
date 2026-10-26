@@ -76,26 +76,16 @@ Public Class MainWindow1
 
     Private Const SW_RESTORE As Integer = 9
 
-    '尝试把目标窗口激活到前台（最小化时先还原），返回最终是否处于前台
     Private Function TryActivateWindow(hwnd As IntPtr) As Boolean
-        If hwnd = IntPtr.Zero OrElse Not IsWindow(hwnd) Then Return False
-        Try
-            If IsIconic(hwnd) Then ShowWindowAsync(hwnd, SW_RESTORE)
-            For attempt As Integer = 1 To 4
-                If GetForegroundWindow() = hwnd Then Return True
-                SetForegroundWindow(hwnd)
-                BringWindowToTop(hwnd)
-                Threading.Thread.Sleep(60)
-            Next
-        Catch
-        End Try
-        Return GetForegroundWindow() = hwnd
+        Return SendTargetResolver.TryActivateWindow(hwnd)
     End Function
 
     Dim savedkeys As New List(Of Key)
 
     '窗口位置记忆
     Private ReadOnly windowPlacementTimer As New DispatcherTimer(DispatcherPriority.Background)
+    Private initializationTask As Task = Task.CompletedTask
+    Private recordingSaveTask As Task = Task.CompletedTask
     Private Const WindowPlacementSaveDelayMilliseconds As Integer = 800
     '实验性功能
     Public isExperimentalFeatureEnabled As Boolean = ReadSetting("IsExperimentalFeatureEnabled", 0) = 1
@@ -104,7 +94,7 @@ Public Class MainWindow1
 
 #Region "InitializeProgram"
 
-    Private Sub Window_Loaded(sender As Object, e As RoutedEventArgs)
+    Private Async Sub Window_Loaded(sender As Object, e As RoutedEventArgs)
         '判断系统版本是否低于win10 1809以防bug
         Dim osVersion As Version = Environment.OSVersion.Version
         If osVersion.Major < 10 OrElse (osVersion.Major = 10 AndAlso osVersion.Build < 17763) Then
@@ -123,7 +113,8 @@ Public Class MainWindow1
             CreateDefaultSettings()
         End If
         Try
-            InitializeSettings()
+            initializationTask = InitializeSettings()
+            Await initializationTask
         Catch ex As Exception
             Hide()
             ShowExpdlg("错误6：程序在初始化时读取设置出现问题，请尝试删除所有位于HKEY_CURRENT_USER\SOFTWARE\LCS\keyboardmgr的设置，如仍不能解决问题，请联系LCS。", ex.Message & vbLf & ex.StackTrace)
@@ -171,7 +162,12 @@ Public Class MainWindow1
         End Using
     End Sub
 
-    Public Sub HandleExternalRequest(filePath As String)
+    Public Async Sub HandleExternalRequest(filePath As String)
+        Try
+            Await initializationTask
+        Catch
+            Return
+        End Try
         ShowInTaskbar = True
         Show()
         WindowState = WindowState.Normal
@@ -179,6 +175,11 @@ Public Class MainWindow1
         SetForegroundWindow(New WindowInteropHelper(Me).Handle)
         If String.IsNullOrEmpty(filePath) Then
             ApplyStartupTabSelection()
+            Return
+        End If
+        If String.Equals(Path.GetExtension(filePath), ".kbmr", StringComparison.OrdinalIgnoreCase) Then
+            TabControl1.SelectedIndex = 4
+            Await OpenRecordingFileAsync(filePath, False)
             Return
         End If
         TabControl1.SelectedIndex = 2
@@ -201,7 +202,7 @@ Public Class MainWindow1
         WriteSetting("StartupTabIndex", 0)
     End Sub
 
-    Private Sub InitializeSettings()
+    Private Async Function InitializeSettings() As Task
         '检测设置并初始化控件状态
         InitializeThemeSettings()
         InitializeFloatingWindowSettings()
@@ -209,7 +210,7 @@ Public Class MainWindow1
         InitializeClickSettings()
         InitializeOpCoreSettings()
         InitializeHotkeySettings()
-        InitializeRecordSettings()
+        Await InitializeRecordSettingsAsync()
         InitializeScriptSettings()
         UpdateItemDisplay()
         ApplyStartupTabSelection()
@@ -242,7 +243,7 @@ Public Class MainWindow1
             DoAutoStartCheckbox.IsChecked = False
             DoRegisterAutoStartTaskComboBox.SelectedIndex = 1
         End If
-    End Sub
+    End Function
 
     Private Sub ApplyStartupTabSelection()
         Dim startupTabIndex As Integer
@@ -1354,9 +1355,10 @@ Public Class MainWindow1
     Dim rapidFireSendMethod As Integer = 0 '0=快捷键，1=点击发送按钮，2=自动（先按钮后快捷键）
     Private sendTargetWindowManual As IntPtr = IntPtr.Zero '手动选取的连发目标窗口（会话内记忆）
     Private sendTargetWindowCandidate As IntPtr = IntPtr.Zero '启动连发时的前台窗口候选
-    Private inputBoxCaptured As Boolean = False '是否已点选输入框位置
-    Private inputBoxRelativeX As Integer = 0 '输入框相对目标窗口左上角的坐标
-    Private inputBoxRelativeY As Integer = 0
+    Private captureTargetRoot As IntPtr = IntPtr.Zero
+    Private inputBoxCaptured As Boolean = False
+    Private inputBoxClientX As Integer = 0
+    Private inputBoxClientY As Integer = 0
     Private isUpdatingSendEditor As Boolean = False
     Private sendItemPreviews As New List(Of String)
     Private activeSendPhrases As New List(Of RapidFireItem)
@@ -1364,9 +1366,22 @@ Public Class MainWindow1
     Private sendTargetWindow As IntPtr = IntPtr.Zero
     Private ReadOnly sendStartTimer As New DispatcherTimer(DispatcherPriority.Normal)
     Private ReadOnly sendCompletionTimer As New DispatcherTimer(DispatcherPriority.Normal)
-    Private sendTargetRetryCount As Integer = 0
+    Private ReadOnly sendResolveWatch As New Diagnostics.Stopwatch()
+    Private sendResolveStableWindow As IntPtr = IntPtr.Zero
+    Private sendResolveStableCount As Integer = 0
+    Private sendStartFromHotkey As Boolean = False
+    Private lastSuccessfulTargetHwnd As IntPtr = IntPtr.Zero
+    Private lastSuccessfulTargetPid As UInteger = 0
+    Private lastSuccessfulTargetClass As String = String.Empty
+    Private lastSuccessfulTargetTitle As String = String.Empty
+    Private Const SendResolveIntervalMilliseconds As Integer = 50
+    Private Const SendResolveTimeoutMilliseconds As Integer = 2500
+    Private Const SendResolveStableSampleCount As Integer = 2
     Private sendIntervalMilliseconds As Integer = 100
     Private ReadOnly sendIntervalWatch As New Diagnostics.Stopwatch()
+    Private ReadOnly sendOperationSemaphore As New SemaphoreSlim(1, 1)
+    Private sendPhraseInProgress As Boolean = False
+    Private sendGeneration As Integer = 0
     Private ReadOnly imagePasteTimer As New DispatcherTimer(DispatcherPriority.Normal)
     Private imagePastePending As Boolean = False
     Private imageClipboardReady As Boolean = False
@@ -1374,10 +1389,17 @@ Public Class MainWindow1
     Private clipboardRetryCount As Integer = 0
     Private imageFocusRetryCount As Integer = 0
     Private activeImageClipboardData As DataObject
+    Private preparedImageData As PreparedImageClipboard
+    Private imagePreparationInProgress As Boolean = False
     Private ReadOnly imageSendWatch As New Diagnostics.Stopwatch()
     Private Const MaximumClipboardRetryCount As Integer = 20
     Private Const MaximumImageFocusRetryCount As Integer = 10
     Private Const MaximumImageSendMilliseconds As Integer = 5000
+    Private Const MaximumScriptOutputCharacters As Integer = 200000
+    Private ReadOnly scriptOutputLock As New Object()
+    Private ReadOnly scriptOutputQueue As New Queue(Of String)()
+    Private scriptOutputQueueCharacters As Integer
+    Private scriptOutputFlushScheduled As Integer
 
     Private Sub UpdateItemDisplay()
         isUpdatingSendEditor = True
@@ -1444,7 +1466,7 @@ Public Class MainWindow1
         If isSending Then
             StopSend()
         Else
-            BtnSendStart_Click(Nothing, Nothing)
+            StartSend(True)
         End If
     End Sub
 
@@ -1559,8 +1581,11 @@ Public Class MainWindow1
     End Sub
 
     Private Sub BtnSendStart_Click(sender As Object, e As RoutedEventArgs)
+        StartSend(False)
+    End Sub
+
+    Private Sub StartSend(fromHotkey As Boolean)
         If isSending Then
-            '停止连发
             StopSend()
             Return
         End If
@@ -1570,7 +1595,6 @@ Public Class MainWindow1
             ShowMyMessage("没有连发内容可发送")
             Return
         End If
-        '验证间隔
         Dim interval As Integer = 100
         If Not Integer.TryParse(TxtSendInterval.Text, interval) OrElse interval < 50 OrElse interval > 1000000 Then
             ShowMyMessage("发送间隔需为50到1000000之间的整数（毫秒）")
@@ -1581,30 +1605,30 @@ Public Class MainWindow1
             Return
         End If
         sendLoop = ChkSendLoop.IsChecked.GetValueOrDefault(False)
-        '启动发送
-        activeSendPhrases = sendPhrases.Where(AddressOf IsSendableItem).Select(AddressOf CloneSendItem).ToList()
+        activeSendPhrases = sendPhrases.Where(AddressOf IsSendableItem).Select(AddressOf SnapshotSendItem).ToList()
         sendCursor = 0
+        sendPhraseInProgress = False
+        Threading.Interlocked.Increment(sendGeneration)
         isSending = True
+        sendStartFromHotkey = fromHotkey
         BtnSendStart.Content = "停止连发"
         sendIntervalMilliseconds = interval
         timerSend.Interval = TimeSpan.FromMilliseconds(sendIntervalMilliseconds)
         timerSend.Stop()
-        '记录启动时的前台窗口（若不属于本程序）作为目标候选，提升自动识别成功率
         Dim startFg As IntPtr = GetForegroundWindow()
-        Dim startFgPid As UInteger = 0
-        If startFg <> IntPtr.Zero Then GetWindowThreadProcessId(startFg, startFgPid)
-        If startFg <> IntPtr.Zero AndAlso startFgPid <> CUInt(Diagnostics.Process.GetCurrentProcess().Id) Then
-            sendTargetWindowCandidate = startFg
+        If startFg <> IntPtr.Zero AndAlso SendTargetResolver.IsEligibleTargetWindow(startFg, False) Then
+            sendTargetWindowCandidate = SendTargetResolver.GetRootWindow(startFg)
         Else
             sendTargetWindowCandidate = IntPtr.Zero
         End If
         Hide()
         floatingWindow.FloatingWindowEvent_Send()
 
-        '等待主窗口完成隐藏，让 Windows 恢复之前的外部前台窗口。
-        sendTargetRetryCount = 0
+        sendResolveWatch.Restart()
+        sendResolveStableWindow = IntPtr.Zero
+        sendResolveStableCount = 0
         sendStartTimer.Stop()
-        sendStartTimer.Interval = TimeSpan.FromMilliseconds(200)
+        sendStartTimer.Interval = TimeSpan.FromMilliseconds(SendResolveIntervalMilliseconds)
         sendStartTimer.Start()
     End Sub
 
@@ -1612,39 +1636,42 @@ Public Class MainWindow1
         sendStartTimer.Stop()
         If Not isSending Then Return
 
-        '优先使用手动选取的目标窗口
         If sendTargetWindowManual <> IntPtr.Zero Then
-            If IsWindow(sendTargetWindowManual) Then
-                sendTargetWindow = sendTargetWindowManual
-                SendNextPhrase()
-                If isSending AndAlso Not imagePastePending Then timerSend.Start()
+            If SendTargetResolver.IsEligibleTargetWindow(sendTargetWindowManual, True) Then
+                ResolveSendTarget(sendTargetWindowManual)
                 Return
             End If
-            '手动选取的窗口已关闭，恢复为自动识别
-            sendTargetWindowManual = IntPtr.Zero
-            If SelectedSendTargetLabel IsNot Nothing Then SelectedSendTargetLabel.Text = "目标窗口：自动识别"
+            ClearManualSendTarget()
         End If
 
-        '其次使用启动时记录的窗口候选
         If sendTargetWindowCandidate <> IntPtr.Zero Then
-            If IsWindow(sendTargetWindowCandidate) Then
-                sendTargetWindow = sendTargetWindowCandidate
-                SendNextPhrase()
-                If isSending AndAlso Not imagePastePending Then timerSend.Start()
+            If SendTargetResolver.IsEligibleTargetWindow(sendTargetWindowCandidate, False) Then
+                ResolveSendTarget(sendTargetWindowCandidate)
                 Return
             End If
             sendTargetWindowCandidate = IntPtr.Zero
         End If
 
         Dim candidateWindow As IntPtr = GetForegroundWindow()
-        Dim candidateProcessId As UInteger = 0
-        If candidateWindow <> IntPtr.Zero Then GetWindowThreadProcessId(candidateWindow, candidateProcessId)
-        If candidateWindow = IntPtr.Zero OrElse candidateProcessId = CUInt(Diagnostics.Process.GetCurrentProcess().Id) Then
-            sendTargetRetryCount += 1
-            If sendTargetRetryCount < 10 Then
-                sendStartTimer.Start()
+        If SendTargetResolver.IsEligibleTargetWindow(candidateWindow, False) Then
+            If candidateWindow = sendResolveStableWindow Then
+                sendResolveStableCount += 1
+            Else
+                sendResolveStableWindow = candidateWindow
+                sendResolveStableCount = 1
+            End If
+            Dim requiredSamples As Integer = If(sendStartFromHotkey, 1, SendResolveStableSampleCount)
+            If sendResolveStableCount >= requiredSamples Then
+                ResolveSendTarget(candidateWindow)
                 Return
             End If
+        Else
+            sendResolveStableWindow = IntPtr.Zero
+            sendResolveStableCount = 0
+        End If
+
+        If sendResolveWatch.ElapsedMilliseconds >= SendResolveTimeoutMilliseconds Then
+            If TryUseLastSuccessfulSendTarget() Then Return
             StopSend()
             Show()
             Activate()
@@ -1652,10 +1679,61 @@ Public Class MainWindow1
             Return
         End If
 
-        sendTargetWindow = candidateWindow
-        SendNextPhrase()
-        If isSending AndAlso Not imagePastePending Then timerSend.Start()
+        sendStartTimer.Interval = TimeSpan.FromMilliseconds(SendResolveIntervalMilliseconds)
+        sendStartTimer.Start()
     End Sub
+
+    Private Sub ResolveSendTarget(hWnd As IntPtr)
+        Dim root As IntPtr = SendTargetResolver.GetRootWindow(hWnd)
+        If root = IntPtr.Zero Then Return
+        sendTargetWindow = root
+        sendResolveWatch.Reset()
+        sendResolveStableWindow = IntPtr.Zero
+        sendResolveStableCount = 0
+        SendNextPhrase()
+    End Sub
+
+    Private Sub ClearManualSendTarget()
+        sendTargetWindowManual = IntPtr.Zero
+        captureTargetRoot = IntPtr.Zero
+        inputBoxCaptured = False
+        inputBoxClientX = 0
+        inputBoxClientY = 0
+        If SelectedSendTargetLabel IsNot Nothing Then SelectedSendTargetLabel.Text = "目标窗口：自动识别"
+    End Sub
+
+    Private Function TryUseLastSuccessfulSendTarget() As Boolean
+        If lastSuccessfulTargetHwnd = IntPtr.Zero Then Return False
+        If Not SendTargetResolver.IsSameTargetWindow(lastSuccessfulTargetHwnd, lastSuccessfulTargetPid, lastSuccessfulTargetClass) Then Return False
+        Dim root As IntPtr = SendTargetResolver.GetRootWindow(lastSuccessfulTargetHwnd)
+        If root = IntPtr.Zero Then Return False
+        sendTargetWindow = root
+        SendNextPhrase()
+        Return True
+    End Function
+
+    Private Sub RememberSuccessfulSendTarget()
+        If sendTargetWindow = IntPtr.Zero Then Return
+        Dim info As New SendTargetResolver.SendTargetInfo()
+        If Not SendTargetResolver.TryGetWindowInfo(sendTargetWindow, info) Then Return
+        lastSuccessfulTargetHwnd = info.Hwnd
+        lastSuccessfulTargetPid = info.ProcessId
+        lastSuccessfulTargetClass = info.ClassName
+        lastSuccessfulTargetTitle = info.Title
+    End Sub
+
+    Private Function TryRecoverSendTarget() As Boolean
+        If sendTargetWindowManual <> IntPtr.Zero AndAlso SendTargetResolver.IsEligibleTargetWindow(sendTargetWindowManual, True) Then
+            sendTargetWindow = SendTargetResolver.GetRootWindow(sendTargetWindowManual)
+            Return True
+        End If
+        If lastSuccessfulTargetHwnd = IntPtr.Zero Then Return False
+        If Not SendTargetResolver.IsSameTargetWindow(lastSuccessfulTargetHwnd, lastSuccessfulTargetPid, lastSuccessfulTargetClass) Then Return False
+        Dim root As IntPtr = SendTargetResolver.GetRootWindow(lastSuccessfulTargetHwnd)
+        If root = IntPtr.Zero Then Return False
+        sendTargetWindow = root
+        Return True
+    End Function
 
     Private Sub TimerSend_Tick(sender As Object, e As EventArgs)
         'DispatcherTimer 按单次计时使用，确保上一条发送完成后再等待完整间隔。
@@ -1667,10 +1745,6 @@ Public Class MainWindow1
             Return
         End If
         SendNextPhrase()
-        If isSending AndAlso Not imagePastePending Then
-            timerSend.Interval = TimeSpan.FromMilliseconds(sendIntervalMilliseconds)
-            timerSend.Start()
-        End If
     End Sub
 
     '根据选项发送连发“发送键”：Enter 或 Shift+Enter
@@ -1679,40 +1753,28 @@ Public Class MainWindow1
     End Sub
 
     '按“连发发送方式”执行发送：快捷键 / 点击发送按钮 / 自动（先按钮后快捷键）
-    Private Sub SendPhrase()
-        Select Case rapidFireSendMethod
-            Case 1 '点击发送按钮
-                If Not UserInputHandler.TryInvokeSendButton(sendTargetWindow) Then
-                    StopSend()
-                    ShowMyMessage("未在目标窗口中找到""发送""按钮，任务已停止。可改用""快捷键""或""自动""发送方式。")
-                End If
-            Case 2 '自动：先按钮后快捷键
-                If Not UserInputHandler.TryInvokeSendButton(sendTargetWindow) Then
-                    SendSendKeyForSetting()
-                End If
-            Case Else '快捷键
-                SendSendKeyForSetting()
-        End Select
-    End Sub
-
     '选取连发目标窗口（会话内记忆，窗口关闭后自动恢复为自动识别）
     Private Sub BtnPickSendTarget_Click(sender As Object, e As RoutedEventArgs)
         Try
             Dim selectorForm As New WindowSelectorDlg()
             If selectorForm.ShowDialog() = System.Windows.Forms.DialogResult.OK Then
                 Dim selectedHwnd As IntPtr = selectorForm.SelectedWindowHwnd
-                If selectedHwnd = IntPtr.Zero Then
+                Dim selectedRoot As IntPtr = SendTargetResolver.GetRootWindow(selectedHwnd)
+                If selectedRoot = IntPtr.Zero OrElse Not SendTargetResolver.IsEligibleTargetWindow(selectedRoot, True) Then
                     ShowMyMessage("未选取有效窗体，请重试。")
                     Return
                 End If
-                sendTargetWindowManual = selectedHwnd
+                sendTargetWindowManual = selectedRoot
+                captureTargetRoot = IntPtr.Zero
                 inputBoxCaptured = False
-                Dim title As String = LoafModule.GetWindowTitle(selectedHwnd)
+                inputBoxClientX = 0
+                inputBoxClientY = 0
+                Dim title As String = SendTargetResolver.GetWindowTitleText(selectedRoot)
                 If SelectedSendTargetLabel IsNot Nothing Then
                     If Not String.IsNullOrEmpty(title) Then
                         SelectedSendTargetLabel.Text = "目标窗口：" & title
                     Else
-                        SelectedSendTargetLabel.Text = "目标窗口句柄：" & selectedHwnd.ToString()
+                        SelectedSendTargetLabel.Text = "目标窗口句柄：" & selectedRoot.ToString()
                     End If
                 End If
                 ShowMyMessage("连发目标窗口已指定。开始连发时将自动向该窗口发送。")
@@ -1738,23 +1800,32 @@ Public Class MainWindow1
             ShowMyMessage("未捕获到点击位置，请重试。")
             Return
         End If
-        Dim rect As RECT
-        If GetWindowRect(hwnd, rect) Then
-            inputBoxRelativeX = x - rect.Left
-            inputBoxRelativeY = y - rect.Top
-            inputBoxCaptured = True
-            sendTargetWindowManual = hwnd
-            If SelectedSendTargetLabel IsNot Nothing Then SelectedSendTargetLabel.Text = "目标窗口：已选取（输入框位置已记录）"
+        Dim root As IntPtr = SendTargetResolver.GetRootWindow(hwnd)
+        If root = IntPtr.Zero OrElse Not SendTargetResolver.IsEligibleTargetWindow(root, True) Then
             Show()
-            Activate()
-            ShowMyMessage("输入框位置已记录。开始连发时将点击该位置输入文本。")
-        Else
+            ShowMyMessage("未捕获到有效的输入框位置，请重试。")
+            Return
+        End If
+        Dim clientX As Integer = 0
+        Dim clientY As Integer = 0
+        If Not SendTargetResolver.TryScreenToWindowClient(root, x, y, clientX, clientY) Then
             Show()
             ShowMyMessage("无法获取窗口位置，点选失败，请重试。")
+            Return
         End If
+        inputBoxClientX = clientX
+        inputBoxClientY = clientY
+        inputBoxCaptured = True
+        captureTargetRoot = root
+        sendTargetWindowManual = root
+        If SelectedSendTargetLabel IsNot Nothing Then SelectedSendTargetLabel.Text = "目标窗口：已选取（输入框位置已记录）"
+        Show()
+        Activate()
+        ShowMyMessage("输入框位置已记录。开始连发时将点击该位置输入文本。")
     End Sub
 
-    Private Sub SendNextPhrase()
+    Private Async Sub SendNextPhrase()
+        If Not isSending OrElse sendPhraseInProgress Then Return
         If sendCursor >= activeSendPhrases.Count Then
             If sendLoop Then
                 sendCursor = 0
@@ -1764,48 +1835,106 @@ Public Class MainWindow1
             End If
         End If
         If sendTargetWindow = IntPtr.Zero OrElse Not IsWindow(sendTargetWindow) Then
-            StopSend()
-            ShowMyMessage("连发目标窗口已关闭，任务已停止。")
-            Return
+            If Not TryRecoverSendTarget() Then
+                StopSend()
+                ShowMyMessage("连发目标窗口已关闭，任务已停止。")
+                Return
+            End If
         End If
-        TryActivateWindow(sendTargetWindow)
         Dim itemToSend As RapidFireItem = activeSendPhrases(sendCursor)
+        Dim targetWindow As IntPtr = sendTargetWindow
+        Dim generation As Integer = sendGeneration
+        sendPhraseInProgress = True
         Try
             If itemToSend.Kind = RapidFireItemKind.Image Then
                 imagePastePending = True
                 imageClipboardReady = False
                 imagePasteReadyForEnter = False
+                preparedImageData = Nothing
                 clipboardRetryCount = 0
                 imageFocusRetryCount = 0
                 imageSendWatch.Restart()
-                TryStartImagePaste(itemToSend)
+                TryStartImagePaste(itemToSend, generation)
+                sendPhraseInProgress = False
                 Return
             ElseIf Not String.IsNullOrWhiteSpace(itemToSend.Text) Then
-                If inputBoxCaptured Then
-                    UserInputHandler.InsertTextToTarget(itemToSend.Text, sendTargetWindow, inputBoxRelativeX, inputBoxRelativeY)
-                Else
-                    UserInputHandler.InsertTextToTarget(itemToSend.Text, sendTargetWindow)
+                Dim text As String = itemToSend.Text
+                Dim captured As Boolean = inputBoxCaptured AndAlso captureTargetRoot = targetWindow
+                Dim pointX As Integer = inputBoxClientX
+                Dim pointY As Integer = inputBoxClientY
+                Dim method As Integer = rapidFireSendMethod
+                Dim useShiftEnter As Boolean = rapidFireSendKey = 1
+                Dim sendError As String = Await Task.Run(Function() SendTextPhrase(text, targetWindow, captured, pointX, pointY, method, useShiftEnter, generation))
+                If generation <> sendGeneration OrElse Not isSending Then Return
+                If sendError IsNot Nothing Then
+                    sendPhraseInProgress = False
+                    StopSend()
+                    ShowMyMessage(sendError)
+                    Return
                 End If
-                SendPhrase()
+                RememberSuccessfulSendTarget()
                 sendIntervalWatch.Restart()
             End If
         Catch ex As Exception
+            If generation <> sendGeneration Then Return
+            sendPhraseInProgress = False
             StopSend()
             ShowMyMessage("无法发送连发条目：" & ex.Message)
             Return
         End Try
+        If generation <> sendGeneration OrElse Not isSending Then Return
+        sendPhraseInProgress = False
         sendCursor += 1
         If Not sendLoop AndAlso sendCursor >= activeSendPhrases.Count Then CompleteSend()
+        If isSending AndAlso Not imagePastePending Then
+            timerSend.Interval = TimeSpan.FromMilliseconds(sendIntervalMilliseconds)
+            timerSend.Start()
+        End If
     End Sub
 
-    Private Sub TryStartImagePaste(item As RapidFireItem)
+    Private Function SendTextPhrase(text As String, targetWindow As IntPtr, captured As Boolean,
+                                    pointX As Integer, pointY As Integer, method As Integer,
+                                    useShiftEnter As Boolean, generation As Integer) As String
+        If generation <> Threading.Interlocked.CompareExchange(sendGeneration, 0, 0) Then Return Nothing
+        sendOperationSemaphore.Wait()
         Try
-            SetImageClipboardData(item.ImageBytes)
+            If generation <> Threading.Interlocked.CompareExchange(sendGeneration, 0, 0) Then Return Nothing
+            TryActivateWindow(targetWindow)
+            If generation <> Threading.Interlocked.CompareExchange(sendGeneration, 0, 0) Then Return Nothing
+            If captured Then
+                UserInputHandler.InsertTextToTarget(text, targetWindow, pointX, pointY)
+            Else
+                UserInputHandler.InsertTextToTarget(text, targetWindow)
+            End If
+            If generation <> Threading.Interlocked.CompareExchange(sendGeneration, 0, 0) Then Return Nothing
+            Return SubmitSendPhraseCore(targetWindow, method, useShiftEnter, generation)
+        Finally
+            sendOperationSemaphore.Release()
+        End Try
+    End Function
+
+    Private Async Sub TryStartImagePaste(item As RapidFireItem, generation As Integer)
+        If imagePreparationInProgress Then
+            imagePasteTimer.Stop()
+            imagePasteTimer.Interval = TimeSpan.FromMilliseconds(50)
+            imagePasteTimer.Start()
+            Return
+        End If
+        imagePreparationInProgress = True
+        Try
+            Dim prepared As PreparedImageClipboard = preparedImageData
+            If prepared Is Nothing Then
+                prepared = Await Task.Run(Function() PrepareImageClipboardData(item.ImageBytes))
+            End If
+            If generation <> sendGeneration OrElse Not isSending Then Return
+            preparedImageData = prepared
+            SetImageClipboardData(prepared)
             imageClipboardReady = True
             imagePasteTimer.Stop()
             imagePasteTimer.Interval = TimeSpan.FromMilliseconds(100)
             imagePasteTimer.Start()
         Catch ex As ExternalException
+            If generation <> sendGeneration OrElse Not isSending Then Return
             clipboardRetryCount += 1
             If clipboardRetryCount >= MaximumClipboardRetryCount Then
                 StopSend()
@@ -1816,12 +1945,15 @@ Public Class MainWindow1
             imagePasteTimer.Interval = TimeSpan.FromMilliseconds(50)
             imagePasteTimer.Start()
         Catch ex As Exception
+            If generation <> sendGeneration OrElse Not isSending Then Return
             StopSend()
             ShowMyMessage("无法发送图片：" & ex.Message)
+        Finally
+            If generation = sendGeneration Then imagePreparationInProgress = False
         End Try
     End Sub
 
-    Private Sub ImagePasteTimer_Tick(sender As Object, e As EventArgs)
+    Private Async Sub ImagePasteTimer_Tick(sender As Object, e As EventArgs)
         imagePasteTimer.Stop()
         If Not isSending OrElse Not imagePastePending Then Return
         If imageSendWatch.ElapsedMilliseconds >= MaximumImageSendMilliseconds Then
@@ -1835,7 +1967,7 @@ Public Class MainWindow1
                 Return
             End If
             If Not imageClipboardReady Then
-                TryStartImagePaste(activeSendPhrases(sendCursor))
+                TryStartImagePaste(activeSendPhrases(sendCursor), sendGeneration)
                 Return
             End If
             If sendTargetWindow = IntPtr.Zero OrElse Not IsWindow(sendTargetWindow) Then
@@ -1843,17 +1975,18 @@ Public Class MainWindow1
                 ShowMyMessage("连发目标窗口已关闭，任务已停止。")
                 Return
             End If
-            If GetForegroundWindow() <> sendTargetWindow Then
-                SetForegroundWindow(sendTargetWindow)
-                imageFocusRetryCount += 1
-                If imageFocusRetryCount >= MaximumImageFocusRetryCount Then
-                    StopSend()
-                    ShowMyMessage("无法将焦点切换到连发目标窗口，图片发送已停止。")
+            If Not SendTargetResolver.IsForegroundTarget(sendTargetWindow) Then
+                If Not SendTargetResolver.TryActivateWindow(sendTargetWindow) Then
+                    imageFocusRetryCount += 1
+                    If imageFocusRetryCount >= MaximumImageFocusRetryCount Then
+                        StopSend()
+                        ShowMyMessage("无法将焦点切换到连发目标窗口，图片发送已停止。")
+                        Return
+                    End If
+                    imagePasteTimer.Interval = TimeSpan.FromMilliseconds(50)
+                    imagePasteTimer.Start()
                     Return
                 End If
-                imagePasteTimer.Interval = TimeSpan.FromMilliseconds(50)
-                imagePasteTimer.Start()
-                Return
             End If
             Try
                 UserInputHandler.SendPasteShortcut()
@@ -1867,18 +2000,33 @@ Public Class MainWindow1
             imagePasteTimer.Start()
             Return
         End If
+        Dim generation As Integer = sendGeneration
+        Dim targetWindow As IntPtr = sendTargetWindow
+        Dim method As Integer = rapidFireSendMethod
+        Dim useShiftEnter As Boolean = rapidFireSendKey = 1
+        Dim sendError As String = Nothing
         Try
-            SendPhrase()
+            sendError = Await Task.Run(Function() SubmitSendPhrase(targetWindow, method, useShiftEnter, generation))
         Catch ex As ComponentModel.Win32Exception
+            If generation <> sendGeneration OrElse Not isSending Then Return
             StopSend()
             ShowMyMessage(ex.Message)
             Return
         End Try
+        If generation <> sendGeneration OrElse Not isSending Then Return
+        If sendError IsNot Nothing Then
+            StopSend()
+            ShowMyMessage(sendError)
+            Return
+        End If
+        RememberSuccessfulSendTarget()
         imagePastePending = False
         imageClipboardReady = False
         imagePasteReadyForEnter = False
         clipboardRetryCount = 0
         imageFocusRetryCount = 0
+        preparedImageData = Nothing
+        imagePreparationInProgress = False
         activeImageClipboardData = Nothing
         imageSendWatch.Reset()
         sendIntervalWatch.Restart()
@@ -1901,6 +2049,8 @@ Public Class MainWindow1
         imagePasteReadyForEnter = False
         clipboardRetryCount = 0
         imageFocusRetryCount = 0
+        preparedImageData = Nothing
+        imagePreparationInProgress = False
         activeImageClipboardData = Nothing
         imageSendWatch.Reset()
         sendCompletionTimer.Interval = TimeSpan.FromMilliseconds(150)
@@ -1916,6 +2066,8 @@ Public Class MainWindow1
     End Sub
 
     Public Sub StopSend()
+        Threading.Interlocked.Increment(sendGeneration)
+        sendPhraseInProgress = False
         timerSend.Stop()
         sendStartTimer.Stop()
         sendCompletionTimer.Stop()
@@ -1925,13 +2077,22 @@ Public Class MainWindow1
         imagePasteReadyForEnter = False
         clipboardRetryCount = 0
         imageFocusRetryCount = 0
+        preparedImageData = Nothing
+        imagePreparationInProgress = False
         activeImageClipboardData = Nothing
         imageSendWatch.Reset()
         isSending = False
         activeSendPhrases.Clear()
         sendCursor = 0
         sendTargetWindow = IntPtr.Zero
-        sendTargetRetryCount = 0
+        sendTargetWindowCandidate = IntPtr.Zero
+        sendResolveWatch.Reset()
+        sendResolveStableWindow = IntPtr.Zero
+        sendResolveStableCount = 0
+        sendStartFromHotkey = False
+        If sendTargetWindowManual <> IntPtr.Zero AndAlso Not SendTargetResolver.IsEligibleTargetWindow(sendTargetWindowManual, True) Then
+            ClearManualSendTarget()
+        End If
         sendIntervalWatch.Reset()
         BtnSendStart.Content = "开始连发"
         floatingWindow.FloatingWindow_Reset()
@@ -2063,19 +2224,28 @@ Public Class MainWindow1
         End Using
     End Function
 
-    Private Sub SetImageClipboardData(imageBytes As Byte())
+    Private NotInheritable Class PreparedImageClipboard
+        Public Property Bitmap As BitmapSource
+        Public Property PngBytes As Byte()
+    End Class
+
+    Private Shared Function PrepareImageClipboardData(imageBytes As Byte()) As PreparedImageClipboard
         Dim bitmap As BitmapSource = LoadBitmap(imageBytes)
-        Dim pngBytes As Byte()
         Using pngStream As New MemoryStream()
             Dim encoder As New PngBitmapEncoder()
             encoder.Frames.Add(BitmapFrame.Create(bitmap))
             encoder.Save(pngStream)
-            pngBytes = pngStream.ToArray()
+            Return New PreparedImageClipboard With {
+                .Bitmap = bitmap,
+                .PngBytes = pngStream.ToArray()
+            }
         End Using
+    End Function
 
+    Private Sub SetImageClipboardData(prepared As PreparedImageClipboard)
         activeImageClipboardData = New DataObject()
-        activeImageClipboardData.SetImage(bitmap)
-        activeImageClipboardData.SetData("PNG", New MemoryStream(pngBytes, False), False)
+        activeImageClipboardData.SetImage(prepared.Bitmap)
+        activeImageClipboardData.SetData("PNG", New MemoryStream(prepared.PngBytes, False), False)
         'copy=False 避免 OLE 同步持久化被第三方剪贴板监听器无限阻塞
         Clipboard.SetDataObject(activeImageClipboardData, False)
     End Sub
@@ -2086,8 +2256,10 @@ Public Class MainWindow1
     '录制
     Private recordings As New List(Of KbmrRecording)
     Private currentRecordingIndex As Integer = -1
+    Private playbackRequest As Integer
+    Private playbackLoading As Boolean
 
-    Private Sub InitializeRecordSettings()
+    Private Async Function InitializeRecordSettingsAsync() As Task
         Dim rate As Integer = 15
         Integer.TryParse(ReadSetting("RecordSampleRateMs", 15).ToString(), rate)
         If rate < 1 OrElse rate > 1000 Then rate = 15
@@ -2097,11 +2269,11 @@ Public Class MainWindow1
         ChkPlaybackBlockInput.IsChecked = ReadSetting("RecordPlaybackBlockInput", 0) = 1
         Combobox6.SelectedIndex = 1
         '载入自动保存的历史录制
-        recordings = RecordingStore.LoadAll()
+        recordings = Await Task.Run(Function() RecordingStore.LoadAllMetadata())
         currentRecordingIndex = -1
         RefreshRecordList()
         UpdateRecordButtons()
-    End Sub
+    End Function
 
     '开始录制
     Private Sub Button_Click_6(sender As Object, e As RoutedEventArgs)
@@ -2109,8 +2281,8 @@ Public Class MainWindow1
     End Sub
 
     Public Sub StartRecording()
-        If InputRecorder.IsRecording Then Return
-        If MacroPlayer.IsPlaying Then MacroPlayer.StopPlayback()
+        If InputRecorder.IsRecording OrElse Not recordingSaveTask.IsCompleted Then Return
+        StopRecordingPlayback()
         If ScriptRunner.IsRunning Then
             ShowMyMessage("脚本正在运行，请先停止脚本后再开始录制。")
             Return
@@ -2129,31 +2301,96 @@ Public Class MainWindow1
     End Sub
 
     '停止录制
-    Private Sub Button_Click_8(sender As Object, e As RoutedEventArgs)
-        StopRecordingAndSave()
+    Private Async Sub Button_Click_8(sender As Object, e As RoutedEventArgs)
+        Await StopRecordingAndSaveAsync()
     End Sub
 
-    Public Sub StopRecordingAndSave()
+    Private Function SubmitSendPhrase(targetWindow As IntPtr, method As Integer, useShiftEnter As Boolean, generation As Integer) As String
+        If generation <> Threading.Interlocked.CompareExchange(sendGeneration, 0, 0) Then Return Nothing
+        sendOperationSemaphore.Wait()
+        Try
+            If generation <> Threading.Interlocked.CompareExchange(sendGeneration, 0, 0) Then Return Nothing
+            Return SubmitSendPhraseCore(targetWindow, method, useShiftEnter, generation)
+        Finally
+            sendOperationSemaphore.Release()
+        End Try
+    End Function
+
+    Private Function SubmitSendPhraseCore(targetWindow As IntPtr, method As Integer, useShiftEnter As Boolean, generation As Integer) As String
+        If generation <> Threading.Interlocked.CompareExchange(sendGeneration, 0, 0) Then Return Nothing
+        Select Case method
+            Case 1
+                If Not UserInputHandler.TryInvokeSendButton(targetWindow) Then
+                    Return "未在目标窗口中找到""发送""按钮，任务已停止。可改用""快捷键""或""自动""发送方式。"
+                End If
+            Case 2
+                If Not UserInputHandler.TryInvokeSendButton(targetWindow) Then
+                    Dim activationError As String = EnsureSendTargetForeground(targetWindow)
+                    If activationError IsNot Nothing Then Return activationError
+                    UserInputHandler.SendSendKey(useShiftEnter)
+                End If
+            Case Else
+                Dim activationError As String = EnsureSendTargetForeground(targetWindow)
+                If activationError IsNot Nothing Then Return activationError
+                UserInputHandler.SendSendKey(useShiftEnter)
+        End Select
+        Return Nothing
+    End Function
+
+    Private Function EnsureSendTargetForeground(targetWindow As IntPtr) As String
+        If SendTargetResolver.IsForegroundTarget(targetWindow) Then Return Nothing
+        If SendTargetResolver.TryActivateWindow(targetWindow) Then Return Nothing
+        If SendTargetResolver.IsTargetLikelyElevated(targetWindow) Then
+            Return "无法激活连发目标窗口。目标程序可能以管理员权限运行，请以管理员身份运行键鼠管家后重试。"
+        End If
+        Return "无法激活连发目标窗口，任务已停止。请确认目标窗口未被其他程序遮挡或锁定。"
+    End Function
+
+    Private Shared Function SnapshotSendItem(item As RapidFireItem) As RapidFireItem
+        Return New RapidFireItem With {
+            .Kind = item.Kind,
+            .Text = item.Text,
+            .FileName = item.FileName,
+            .ImageBytes = item.ImageBytes
+        }
+    End Function
+
+    Public Async Function StopRecordingAndSaveAsync() As Task
+        If recordingSaveTask IsNot Nothing AndAlso Not recordingSaveTask.IsCompleted Then
+            Await recordingSaveTask
+            Return
+        End If
         If Not InputRecorder.IsRecording Then Return
         Dim result As KbmrRecording = InputRecorder.StopRecording()
         If result Is Nothing Then Return
         result.Name = "录制 " & DateTime.Now.ToString("MM-dd HH:mm:ss")
+        recordingSaveTask = CompleteRecordingSaveAsync(result)
+        Await recordingSaveTask
+    End Function
+
+    Private Async Function CompleteRecordingSaveAsync(result As KbmrRecording) As Task
         '自动保存到历史目录，使录制在重启后仍然保留
-        If Not RecordingStore.Save(result) Then
+        Dim saved As Boolean = Await Task.Run(Function() RecordingStore.Save(result))
+        If Not saved Then
             ShowMyMessage("录制已完成，但自动保存历史失败，请使用""另存为""导出到文件。")
+        Else
+            result.Events.Clear()
+            result.EventsLoaded = False
         End If
         recordings.Add(result)
         currentRecordingIndex = recordings.Count - 1
         RefreshRecordList()
-        RecordStatusLabel.Text = "录制完成：" & result.Events.Count & " 个事件，" & (result.DurationMs / 1000.0).ToString("0.0") & " 秒。"
+        RecordStatusLabel.Text = "录制完成：" & result.EventCount & " 个事件，" & (result.DurationMs / 1000.0).ToString("0.0") & " 秒。"
         UpdateRecordButtons()
-        Show()
-        floatingWindow.FloatingWindow_Reset()
-    End Sub
+        If Not MacroPlayer.IsPlaying AndAlso Not isSending AndAlso Not isClicking AndAlso Not ScriptRunner.IsRunning Then
+            Show()
+            floatingWindow.FloatingWindow_Reset()
+        End If
+    End Function
 
-    Public Sub ToggleRecording()
+    Public Async Sub ToggleRecording()
         If InputRecorder.IsRecording Then
-            StopRecordingAndSave()
+            Await StopRecordingAndSaveAsync()
         Else
             StartRecording()
         End If
@@ -2200,15 +2437,39 @@ Public Class MainWindow1
         UpdateRecordContent()
     End Sub
 
-    Private Sub UpdateRecordContent()
+    Private recordPreviewRequest As Integer
+
+    Private Async Sub UpdateRecordContent()
+        recordPreviewRequest += 1
+        Dim request As Integer = recordPreviewRequest
         If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then
             RecordContent.Text = ""
             Return
         End If
         Dim item As KbmrRecording = recordings(currentRecordingIndex)
+        If Not item.EventsLoaded Then
+            RecordContent.Text = "名称：" & item.Name & vbCrLf &
+                                 "事件数：" & item.EventCount & vbCrLf &
+                                 "时长：" & (item.DurationMs / 1000.0).ToString("0.000") & " 秒" & vbCrLf & vbCrLf &
+                                 "正在读取事件预览……"
+            Try
+                Dim previewRecording As KbmrRecording = Await Task.Run(Function() KbmrCodec.DeserializePreview(item.FilePath, 300))
+                previewRecording.Name = item.Name
+                previewRecording.FilePath = item.FilePath
+                If request = recordPreviewRequest Then RecordContent.Text = FormatRecordingPreview(previewRecording)
+                Return
+            Catch ex As Exception
+                If request = recordPreviewRequest Then RecordContent.Text = "无法读取录制预览：" & ex.Message
+                Return
+            End Try
+        End If
+        RecordContent.Text = FormatRecordingPreview(item)
+    End Sub
+
+    Private Function FormatRecordingPreview(item As KbmrRecording) As String
         Dim builder As New StringBuilder()
         builder.AppendLine("名称：" & item.Name)
-        builder.AppendLine("事件数：" & item.Events.Count)
+        builder.AppendLine("事件数：" & item.EventCount)
         builder.AppendLine("时长：" & (item.DurationMs / 1000.0).ToString("0.000") & " 秒")
         builder.AppendLine("鼠标采样频率：" & item.SampleIntervalMs & " ms")
         builder.AppendLine("录制分辨率：" & item.ScreenWidth & " x " & item.ScreenHeight)
@@ -2219,9 +2480,9 @@ Public Class MainWindow1
         For index As Integer = 0 To previewCount - 1
             builder.AppendLine(FormatKbmrEvent(item.Events(index)))
         Next
-        If item.Events.Count > previewCount Then builder.AppendLine("……（仅显示前 " & previewCount & " 个事件）")
-        RecordContent.Text = builder.ToString()
-    End Sub
+        If item.EventCount > previewCount Then builder.AppendLine("……（仅显示前 " & previewCount & " 个事件）")
+        Return builder.ToString()
+    End Function
 
     Private Function FormatKbmrEvent(item As KbmrEvent) As String
         Dim time As String = (item.OffsetMs / 1000.0).ToString("0.000")
@@ -2269,19 +2530,48 @@ Public Class MainWindow1
         If RecordList.SelectedIndex >= 0 Then BtnRecordPlay_Click(Nothing, Nothing)
     End Sub
 
-    Private Sub BtnRecordPlay_Click(sender As Object, e As RoutedEventArgs)
+    Private Async Sub BtnRecordPlay_Click(sender As Object, e As RoutedEventArgs)
+        If playbackLoading OrElse MacroPlayer.IsPlaying Then Return
+        playbackRequest += 1
+        Dim request As Integer = playbackRequest
+        playbackLoading = True
+        UpdateRecordButtons()
+        Try
+            Await PlaySelectedRecordingAsync(request)
+        Finally
+            If request = playbackRequest Then
+                playbackLoading = False
+                UpdateRecordButtons()
+            End If
+        End Try
+    End Sub
+
+    Private Async Function PlaySelectedRecordingAsync(request As Integer) As Task
         If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then
             ShowMyMessage("请先选择一条录制。")
             Return
         End If
-        If InputRecorder.IsRecording Then StopRecordingAndSave()
+        Dim selectedRecording As KbmrRecording = recordings(currentRecordingIndex)
+        Await StopRecordingAndSaveAsync()
+        If request <> playbackRequest Then Return
         If ScriptRunner.IsRunning Then
             ShowMyMessage("脚本正在运行，请先停止脚本后再回放录制。")
             Return
         End If
         If isClicking Then StopClick()
         If isSending Then StopSend()
-        Dim item As KbmrRecording = recordings(currentRecordingIndex)
+        Dim selectedIndex As Integer = recordings.FindIndex(Function(value) Object.ReferenceEquals(value, selectedRecording))
+        If selectedIndex < 0 Then Return
+        Dim item As KbmrRecording
+        Try
+            item = Await LoadRecordingEventsAsync(selectedIndex)
+        Catch ex As Exception
+            If request <> playbackRequest Then Return
+            ShowMyMessage("无法读取录制文件：" & ex.Message)
+            Return
+        End Try
+        If request <> playbackRequest OrElse item Is Nothing Then Return
+        If InputRecorder.IsRecording OrElse ScriptRunner.IsRunning OrElse isClicking OrElse isSending Then Return
         If item.Events.Count = 0 Then
             ShowMyMessage("该录制没有内容。")
             Return
@@ -2300,16 +2590,24 @@ Public Class MainWindow1
                                   ChkPlaybackBlockInput.IsChecked.GetValueOrDefault(False))
         RecordStatusLabel.Text = "正在回放……按""停止播放""或终止任务快捷键可结束。"
         UpdateRecordButtons()
-        Hide（）
+        Hide()
         floatingWindow.FloatingWindowEvent_Playback()
-    End Sub
+    End Function
 
     Private Sub BtnRecordStopPlay_Click(sender As Object, e As RoutedEventArgs)
-        MacroPlayer.StopPlayback()
+        StopRecordingPlayback()
     End Sub
 
-    Private Sub MacroPlayer_PlaybackStopped()
+    Public Sub StopRecordingPlayback()
+        playbackRequest += 1
+        playbackLoading = False
+        MacroPlayer.StopPlayback()
+        UpdateRecordButtons()
+    End Sub
+
+    Private Sub MacroPlayer_PlaybackStopped(playedRecording As KbmrRecording)
         Dispatcher.BeginInvoke(New Action(Sub()
+                                              If MacroPlayer.IsPlaying OrElse playbackLoading OrElse InputRecorder.IsRecording OrElse isSending OrElse isClicking OrElse ScriptRunner.IsRunning Then Return
                                               RecordStatusLabel.Text = "回放已停止或结束。"
                                               UpdateRecordButtons()
                                               Show()
@@ -2317,7 +2615,7 @@ Public Class MainWindow1
                                           End Sub))
     End Sub
 
-    Private Sub BtnRecordSave_Click(sender As Object, e As RoutedEventArgs)
+    Private Async Sub BtnRecordSave_Click(sender As Object, e As RoutedEventArgs)
         If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then Return
         Dim dialog As New SaveFileDialog With {
             .Title = "保存录制",
@@ -2329,14 +2627,17 @@ Public Class MainWindow1
         }
         If dialog.ShowDialog(Me) <> True Then Return
         Try
-            File.WriteAllBytes(dialog.FileName, KbmrCodec.Serialize(recordings(currentRecordingIndex)))
+            Dim item As KbmrRecording = Await LoadRecordingEventsAsync(currentRecordingIndex)
+            If item Is Nothing Then Return
+            Dim outputPath As String = dialog.FileName
+            Await Task.Run(Sub() KbmrCodec.WriteFile(item, outputPath))
             ShowMyMessage("录制已保存到文件。")
         Catch ex As Exception
             ShowMyMessage("无法保存录制：" & ex.Message)
         End Try
     End Sub
 
-    Private Sub BtnRecordOpen_Click(sender As Object, e As RoutedEventArgs)
+    Private Async Sub BtnRecordOpen_Click(sender As Object, e As RoutedEventArgs)
         Dim dialog As New OpenFileDialog With {
             .Title = "打开录制",
             .Filter = "键鼠管家录制文件 (*.kbmr)|*.kbmr|所有文件 (*.*)|*.*",
@@ -2345,20 +2646,39 @@ Public Class MainWindow1
             .Multiselect = False
         }
         If dialog.ShowDialog(Me) <> True Then Return
+        Await OpenRecordingFileAsync(dialog.FileName, True)
+    End Sub
+
+    Private Async Function OpenRecordingFileAsync(filePath As String, showSuccessMessage As Boolean) As Task
         Try
-            Dim result As KbmrRecording = KbmrCodec.Deserialize(File.ReadAllBytes(dialog.FileName))
-            result.Name = Path.GetFileNameWithoutExtension(dialog.FileName)
-            '将打开的录制纳入历史目录，方便下次直接使用
-            RecordingStore.Save(result)
+            Dim result As KbmrRecording = Await Task.Run(Function() KbmrCodec.Deserialize(filePath))
+            result.Name = Path.GetFileNameWithoutExtension(filePath)
+            '将打开的录制纳入历史目录，方便下次直接使用。
+            Dim saved As Boolean = Await Task.Run(Function() RecordingStore.Save(result))
+            If saved Then
+                result.Events.Clear()
+                result.EventsLoaded = False
+            End If
             recordings.Add(result)
             currentRecordingIndex = recordings.Count - 1
             RefreshRecordList()
             UpdateRecordButtons()
-            ShowMyMessage("录制已打开并加入历史录制。")
+            If showSuccessMessage Then ShowMyMessage("录制已打开并加入历史录制。")
         Catch ex As Exception
             ShowMyMessage("无法打开录制：" & ex.Message)
         End Try
-    End Sub
+    End Function
+
+    Private Async Function LoadRecordingEventsAsync(index As Integer) As Task(Of KbmrRecording)
+        If index < 0 OrElse index >= recordings.Count Then Return Nothing
+        Dim item As KbmrRecording = recordings(index)
+        If item.EventsLoaded Then Return item
+        Dim loaded As KbmrRecording = Await Task.Run(Function() RecordingStore.LoadFull(item))
+        Dim currentIndex As Integer = recordings.FindIndex(Function(value) Object.ReferenceEquals(value, item))
+        If currentIndex < 0 Then Return Nothing
+        '完整事件由本次回放/导出独立持有，历史列表保持元数据，避免其他 UI 操作清空工作中的事件。
+        Return loaded
+    End Function
 
     Private Sub BtnRecordExport_Click(sender As Object, e As RoutedEventArgs) '待实现
         If currentRecordingIndex < 0 OrElse currentRecordingIndex >= recordings.Count Then Return
@@ -2372,7 +2692,7 @@ Public Class MainWindow1
 
     Private Sub UpdateRecordButtons()
         Dim isRecording As Boolean = InputRecorder.IsRecording
-        Dim isPlaying As Boolean = MacroPlayer.IsPlaying
+        Dim isPlaying As Boolean = MacroPlayer.IsPlaying OrElse playbackLoading
         BtnRecordStart.IsEnabled = Not isRecording AndAlso Not isPlaying
         BtnRecordStop.IsEnabled = isRecording
         BtnRecordPlay.IsEnabled = currentRecordingIndex >= 0 AndAlso Not isRecording AndAlso Not isPlaying
@@ -2408,7 +2728,7 @@ Public Class MainWindow1
         Dim code As String = scriptContent
         If String.IsNullOrWhiteSpace(code) Then
             ShowMyMessage("请先加载脚本。")
-        Return
+            Return
         End If
         Dim analysis As ScriptAnalysisResult = ScriptSecurity.Analyze(code)
         If analysis.SyntaxErrors.Count > 0 Then
@@ -2473,6 +2793,10 @@ Public Class MainWindow1
         currentScriptHash = ""
         currentScriptTrusted = False
         scriptContent = ""
+        SyncLock scriptOutputLock
+            scriptOutputQueue.Clear()
+            scriptOutputQueueCharacters = 0
+        End SyncLock
         TxtScriptOutput.Clear()
         UpdateScriptTrustStatus()
     End Sub
@@ -2523,7 +2847,7 @@ Public Class MainWindow1
     End Sub
 
     Private Sub ScriptRunner_OutputReceived(text As String)
-        Dispatcher.BeginInvoke(New Action(Sub() AppendScriptOutput(text)))
+        AppendScriptOutput(text)
     End Sub
 
     Private Sub ScriptRunner_StateChanged(running As Boolean)
@@ -2534,8 +2858,46 @@ Public Class MainWindow1
     End Sub
 
     Private Sub AppendScriptOutput(text As String)
-        TxtScriptOutput.AppendText(text & vbCrLf)
-        TxtScriptOutput.ScrollToEnd()
+        If String.IsNullOrEmpty(text) Then Return
+        If text.Length > MaximumScriptOutputCharacters Then text = text.Substring(text.Length - MaximumScriptOutputCharacters)
+        SyncLock scriptOutputLock
+            While scriptOutputQueue.Count > 0 AndAlso
+                  (scriptOutputQueue.Count >= 2000 OrElse scriptOutputQueueCharacters + text.Length > MaximumScriptOutputCharacters)
+                scriptOutputQueueCharacters -= scriptOutputQueue.Dequeue().Length
+            End While
+            scriptOutputQueue.Enqueue(text)
+            scriptOutputQueueCharacters += text.Length
+        End SyncLock
+        ScheduleScriptOutputFlush()
+    End Sub
+
+    Private Sub ScheduleScriptOutputFlush()
+        If Threading.Interlocked.Exchange(scriptOutputFlushScheduled, 1) <> 0 Then Return
+        Dispatcher.BeginInvoke(New Action(AddressOf FlushScriptOutput), DispatcherPriority.Background)
+    End Sub
+
+    Private Sub FlushScriptOutput()
+        Dim builder As New StringBuilder()
+        SyncLock scriptOutputLock
+            While scriptOutputQueue.Count > 0
+                Dim line As String = scriptOutputQueue.Dequeue()
+                scriptOutputQueueCharacters -= line.Length
+                builder.AppendLine(line)
+            End While
+        End SyncLock
+        If builder.Length > 0 Then
+            TxtScriptOutput.AppendText(builder.ToString())
+            If TxtScriptOutput.Text.Length > MaximumScriptOutputCharacters Then
+                TxtScriptOutput.Text = TxtScriptOutput.Text.Substring(TxtScriptOutput.Text.Length - MaximumScriptOutputCharacters)
+            End If
+            TxtScriptOutput.ScrollToEnd()
+        End If
+        Threading.Interlocked.Exchange(scriptOutputFlushScheduled, 0)
+        Dim hasPending As Boolean
+        SyncLock scriptOutputLock
+            hasPending = scriptOutputQueue.Count > 0
+        End SyncLock
+        If hasPending Then ScheduleScriptOutputFlush()
     End Sub
 
     Private Sub UpdateScriptButtons()

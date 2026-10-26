@@ -131,7 +131,7 @@
 
                     <StackPanel Grid.ColumnSpan="3" Margin="2,0,0,12">
                         <TextBlock Text="连发" FontSize="24" FontWeight="Light" Margin="0,5,0,0"/>
-                        <TextBlock Text="按列表顺序逐条发送，自动识别目标窗口并填充文字后按发送方式发送" Opacity="0.68" Margin="0,3,0,0"/>
+                        <TextBlock Text="在聊天窗口实现连续发送一串消息列表。" Opacity="0.68" Margin="0,3,0,0"/>
                         <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                             <TextBlock x:Name="SelectedSendTargetLabel" Text="目标窗口：自动识别" Opacity="0.68" VerticalAlignment="Center"/>
                             <Button Style="{DynamicResource LinkButton}" Content="手动选取" Margin="12,0,0,0" Click="BtnPickSendTarget_Click"/>
@@ -604,7 +604,7 @@
                         <Border Grid.Row="1" Grid.ColumnSpan="2" Height="1" Background="{DynamicResource ButtonBorderColor}"
                                     Opacity="0.22" Margin="0,20,0,14"/>
                         <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,35,0,0" TextWrapping="Wrap" LineHeight="20" Opacity="0.72"
-                                       Text="提供连点、列表连发、全局热键和悬浮窗等功能。支持 Windows 10 1809 及更高版本。"/>
+                                       Text="键盘鼠标自动化工具，提供连点、连发、摸鱼等功能。"/>
                     </Grid>
 
                     <Grid Grid.Row="1" Margin="4,12,4,0">

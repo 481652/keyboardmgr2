@@ -7,6 +7,7 @@ Module OpCoreManaged
 
     Private timerMouse As Timer
     Private timerKeys As Timer
+    Private ReadOnly mouseClickLock As New Object()
 
     Private baseIntervalMs As Integer = 10
     Private isSpeedRandomOffset As Boolean = False
@@ -16,6 +17,7 @@ Module OpCoreManaged
     Private mouseButton As Integer = 1
 
     Private keyList As New List(Of UShort)
+    Private ReadOnly keyClickLock As New Object()
 
     Private isMouseHeld As Boolean = False
     Private heldMouseButton As Integer = 0
@@ -25,34 +27,43 @@ Module OpCoreManaged
     Private rnd As New Random
 
     Public Function IsRunning() As Boolean
-        Return (timerMouse IsNot Nothing AndAlso timerMouse.Enabled) OrElse
-               (timerKeys IsNot Nothing AndAlso timerKeys.Enabled) OrElse
-               isMouseHeld OrElse isKeyboardHeld
+        '单次 Timer 在回调执行时 Enabled=False，但任务仍在运行。
+        SyncLock mouseClickLock
+            If timerMouse IsNot Nothing Then Return True
+        End SyncLock
+        SyncLock keyClickLock
+            If timerKeys IsNot Nothing Then Return True
+        End SyncLock
+        Return isMouseHeld OrElse isKeyboardHeld
     End Function
 
     Public Sub StartMouseClick(intervalMs As Integer, randomSpeedOffset As Boolean, randomPosOffset As Boolean, bx As Integer, by As Integer, button As Integer)
         StopAll()
-        baseIntervalMs = Math.Max(1, intervalMs)
-        isSpeedRandomOffset = randomSpeedOffset
-        isPosRandomOffset = randomPosOffset
-        baseX = bx
-        baseY = by
-        mouseButton = button
-        timerMouse = New Timer(baseIntervalMs)
-        timerMouse.AutoReset = True
-        AddHandler timerMouse.Elapsed, AddressOf TimerMouse_Elapsed
-        timerMouse.Start()
+        SyncLock mouseClickLock
+            baseIntervalMs = Math.Max(1, intervalMs)
+            isSpeedRandomOffset = randomSpeedOffset
+            isPosRandomOffset = randomPosOffset
+            baseX = bx
+            baseY = by
+            mouseButton = button
+            timerMouse = New Timer(baseIntervalMs)
+            timerMouse.AutoReset = False
+            AddHandler timerMouse.Elapsed, AddressOf TimerMouse_Elapsed
+            timerMouse.Start()
+        End SyncLock
     End Sub
 
     Public Sub StartKeyClick(intervalMs As Integer, keys As UShort())
         StopAll()
         baseIntervalMs = Math.Max(1, intervalMs)
-        keyList.Clear()
-        If keys IsNot Nothing Then keyList.AddRange(keys)
-        timerKeys = New Timer(baseIntervalMs)
-        timerKeys.AutoReset = True
-        AddHandler timerKeys.Elapsed, AddressOf TimerKeys_Elapsed
-        timerKeys.Start()
+        SyncLock keyClickLock
+            keyList.Clear()
+            If keys IsNot Nothing Then keyList.AddRange(keys)
+            timerKeys = New Timer(baseIntervalMs)
+            timerKeys.AutoReset = False
+            AddHandler timerKeys.Elapsed, AddressOf TimerKeys_Elapsed
+            timerKeys.Start()
+        End SyncLock
     End Sub
 
     Public Sub StartMouseHold(button As Integer)
@@ -71,18 +82,23 @@ Module OpCoreManaged
     End Sub
 
     Public Sub StopAll()
-        If timerMouse IsNot Nothing Then
-            RemoveHandler timerMouse.Elapsed, AddressOf TimerMouse_Elapsed
-            timerMouse.Stop()
-            timerMouse.Dispose()
-            timerMouse = Nothing
-        End If
-        If timerKeys IsNot Nothing Then
-            RemoveHandler timerKeys.Elapsed, AddressOf TimerKeys_Elapsed
-            timerKeys.Stop()
-            timerKeys.Dispose()
-            timerKeys = Nothing
-        End If
+        SyncLock mouseClickLock
+            If timerMouse IsNot Nothing Then
+                RemoveHandler timerMouse.Elapsed, AddressOf TimerMouse_Elapsed
+                timerMouse.Stop()
+                timerMouse.Dispose()
+                timerMouse = Nothing
+            End If
+        End SyncLock
+        SyncLock keyClickLock
+            If timerKeys IsNot Nothing Then
+                RemoveHandler timerKeys.Elapsed, AddressOf TimerKeys_Elapsed
+                timerKeys.Stop()
+                timerKeys.Dispose()
+                timerKeys = Nothing
+                keyList.Clear()
+            End If
+        End SyncLock
         If isKeyboardHeld Then
             SendKeyCombinationUp(heldKeyList)
             heldKeyList.Clear()
@@ -98,27 +114,35 @@ Module OpCoreManaged
     End Sub
 
     Private Sub TimerMouse_Elapsed(sender As Object, e As ElapsedEventArgs)
-        If isSpeedRandomOffset Then
-            timerMouse.Interval = Math.Max(1, baseIntervalMs + rnd.Next(-10, 11))
-        End If
-        Dim P As POINTAPI
-        GetCursorPos(P)
-        If isPosRandomOffset Then
-            P.x = baseX + rnd.Next(-15, 16)
-            P.y = baseY + rnd.Next(-15, 16)
-            SetCursorPosition(P.x, P.y)
-        End If
-        SendMouseButtonInput(mouseButton, True)
-        SendMouseButtonInput(mouseButton, False)
+        SyncLock mouseClickLock
+            '已排队的旧 Timer 回调不能操作停止或重启后的新任务。
+            If Not Object.ReferenceEquals(sender, timerMouse) Then Return
+            Try
+                If isPosRandomOffset Then
+                    SetCursorPosition(baseX + rnd.Next(-15, 16), baseY + rnd.Next(-15, 16))
+                End If
+                SendMouseButtonInput(mouseButton, True)
+            Finally
+                SendMouseButtonInput(mouseButton, False)
+            End Try
+            If timerMouse IsNot Nothing AndAlso Object.ReferenceEquals(sender, timerMouse) Then
+                timerMouse.Interval = If(isSpeedRandomOffset, Math.Max(1, baseIntervalMs + rnd.Next(-10, 11)), baseIntervalMs)
+                timerMouse.Start()
+            End If
+        End SyncLock
     End Sub
 
     Private Sub TimerKeys_Elapsed(sender As Object, e As ElapsedEventArgs)
-        If keyList.Count = 1 Then
-            SendKey(keyList(0), True)
-            SendKey(keyList(0), False)
-        ElseIf keyList.Count >= 2 Then
-            SendKeyCombination(keyList)
-        End If
+        SyncLock keyClickLock
+            If Not Object.ReferenceEquals(sender, timerKeys) Then Return
+            If keyList.Count = 1 Then
+                SendKey(keyList(0), True)
+                SendKey(keyList(0), False)
+            ElseIf keyList.Count >= 2 Then
+                SendKeyCombination(keyList)
+            End If
+            If timerKeys IsNot Nothing AndAlso Object.ReferenceEquals(sender, timerKeys) Then timerKeys.Start()
+        End SyncLock
     End Sub
 
     Public Function MouseMove(x As Integer, y As Integer) As Boolean

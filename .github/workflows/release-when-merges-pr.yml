@@ -82,7 +82,7 @@ jobs:
           $repo = "${{ github.repository }}"
           $dryRun = ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.dry_run }}" -eq "true")
 
-          # 新版本必须高于当前正式版，否则说明版本号没升、或合并了落后的分支
+          # 检测新旧版本号
           $prevTag = (& gh api "repos/$repo/releases/latest" --jq .tag_name 2>$null)
           if ($LASTEXITCODE -ne 0) { $prevTag = $null } else { $prevTag = "$prevTag".Trim().TrimStart([char]'v', [char]'V') }
           if ([string]::IsNullOrWhiteSpace($prevTag)) {
@@ -108,6 +108,9 @@ jobs:
           $publishFlag = if ($dryRun) { 0 } else { 1 }
           Write-Host "版本=$tag 已存在=$exists 试运行=$dryRun 需要发布=$publishFlag"
           "need_publish=$publishFlag" >> $env:GITHUB_OUTPUT
+
+          # 一些奇异搞笑的问题，gh拿某个参数当退出码了且它正好非零
+          $global:LASTEXITCODE = 0
 
       - name: Build (Release)
         shell: pwsh

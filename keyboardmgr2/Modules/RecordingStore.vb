@@ -22,7 +22,7 @@ Public Module RecordingStore
         Dim list As New List(Of KbmrRecording)
         For Each filePath As String In Directory.EnumerateFiles(RootFolder, "*.kbmr")
             Try
-                Dim item As KbmrRecording = KbmrCodec.Deserialize(File.ReadAllBytes(filePath))
+                Dim item As KbmrRecording = KbmrCodec.Deserialize(filePath)
                 item.Name = Path.GetFileNameWithoutExtension(filePath)
                 item.FilePath = filePath
                 list.Add(item)
@@ -31,6 +31,31 @@ Public Module RecordingStore
             End Try
         Next
         Return list.OrderBy(Function(item) item.CreatedUtc).ToList()
+    End Function
+
+    '启动时只读取文件头，避免把全部历史事件一次性解码到内存。
+    Public Function LoadAllMetadata() As List(Of KbmrRecording)
+        Dim list As New List(Of KbmrRecording)
+        For Each filePath As String In Directory.EnumerateFiles(RootFolder, "*.kbmr")
+            Try
+                Dim item As KbmrRecording = KbmrCodec.ReadMetadata(filePath)
+                item.Name = Path.GetFileNameWithoutExtension(filePath)
+                item.FilePath = filePath
+                list.Add(item)
+            Catch
+                '忽略损坏文件，避免单个文件影响整个历史列表。
+            End Try
+        Next
+        Return list.OrderBy(Function(item) item.CreatedUtc).ToList()
+    End Function
+
+    '按需读取单条录制的完整事件流。
+    Public Function LoadFull(recording As KbmrRecording) As KbmrRecording
+        If recording Is Nothing OrElse String.IsNullOrWhiteSpace(recording.FilePath) Then Throw New InvalidDataException("录制文件路径无效。")
+        Dim loaded As KbmrRecording = KbmrCodec.Deserialize(recording.FilePath)
+        loaded.Name = recording.Name
+        loaded.FilePath = recording.FilePath
+        Return loaded
     End Function
 
     '把录制保存到历史目录。新录制自动生成不冲突的文件名，
@@ -42,9 +67,11 @@ Public Module RecordingStore
             If String.IsNullOrEmpty(targetPath) Then
                 targetPath = BuildUniquePath(recording.Name, Nothing)
             End If
-            File.WriteAllBytes(targetPath, KbmrCodec.Serialize(recording))
+            KbmrCodec.WriteFile(recording, targetPath)
             recording.FilePath = targetPath
             recording.Name = Path.GetFileNameWithoutExtension(targetPath)
+            recording.EventCount = recording.Events.Count
+            recording.EventsLoaded = True
             Return True
         Catch
             Return False
@@ -62,7 +89,7 @@ Public Module RecordingStore
             If Not String.IsNullOrEmpty(recording.FilePath) AndAlso File.Exists(recording.FilePath) Then
                 File.Move(recording.FilePath, targetPath)
             Else
-                File.WriteAllBytes(targetPath, KbmrCodec.Serialize(recording))
+                KbmrCodec.WriteFile(recording, targetPath)
             End If
             recording.FilePath = targetPath
             recording.Name = Path.GetFileNameWithoutExtension(targetPath)
