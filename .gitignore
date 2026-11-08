@@ -362,3 +362,19 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Documentation and design notes (kept local, not versioned)
+/docs/
+
+# Performance benchmarks: scripts, raw data, logs and reports - kept local
+/.perf/
+/性能测试报告*.md
+
+# Generated code/report output
+/.VSCodeCounter/
+
+# Exclude test artifacts
+*.kbmr
+
+# Promo materials (marketing assets)
+/promo/
