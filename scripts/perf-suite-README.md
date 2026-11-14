@@ -35,6 +35,8 @@ logs\                 # 构建与各阶段日志
 
 同时更新快捷方式：`.perf\results\latest-report.md`、`.perf\results\latest-results.json`。
 
+> `.perf\results\`（结果、日志、原始数据）已在 `.gitignore` 中忽略，不会污染仓库；如需留档，请自行复制 `perf-report.md`。
+
 ---
 
 ## 参数

@@ -141,7 +141,9 @@ function Add-Check {
         $status = if ([double]$numeric -le [double]$Limit) { 'PASS' } elseif ($Level -eq 'warn') { 'WARN' } else { 'FAIL' }
     }
     if ($status -eq 'PASS') {
-        if ($DisplayValue -eq '') { $DisplayValue = Format-Num $numeric 1 }
+        $displayForConsole = if ($DisplayValue -ne '') { $DisplayValue } else { (Format-Num $numeric 1) + ' ' + $Unit }
+    } else {
+        $displayForConsole = if ($DisplayValue -ne '') { $DisplayValue } else { '—' }
     }
     $record = [pscustomobject]@{
         section = $Section
@@ -160,10 +162,11 @@ function Add-Check {
     if ($status -eq 'SKIP') { $script:skipCount++ }
     $color = 'Green'
     if ($status -eq 'FAIL') { $color = 'Red' } elseif ($status -eq 'WARN') { $color = 'Yellow' } elseif ($status -eq 'SKIP') { $color = 'DarkGray' }
+    $limitText = if ($null -ne $Limit) { (Format-Num $Limit 1) + ' ' + $Unit } else { '—' }
     if (-not $Ci) {
-        Write-Host ('    [{0,-4}] {1} = {2} {3} (限值 {4} {3})' -f $status, $Name, $DisplayValue, $Unit, (Format-Num $Limit 1)) -ForegroundColor $color
+        Write-Host ('    [{0,-4}] {1} = {2} (限值 {3})' -f $status, $Name, $displayForConsole, $limitText) -ForegroundColor $color
     } else {
-        Write-Host ('[{0}] {1} = {2} {3}' -f $status, $Name, $DisplayValue, $Unit)
+        Write-Host ('[{0}] {1} = {2} (限值 {3})' -f $status, $Name, $displayForConsole, $limitText)
     }
 }
 
@@ -647,7 +650,9 @@ try {
     $null = $lines.Add('|---|---|---|---|---|---|')
     foreach ($c in $script:checks) {
         $limitText = if ($null -ne $c.limit) { (Format-Num $c.limit 1) + ' ' + $c.unit } else { '—' }
-        $valueText = if ($c.display -ne '') { $c.display } elseif ($null -ne $c.value) { (Format-Num $c.value 2) + ' ' + $c.unit } else { '—' }
+        if ($c.display -ne '') { $valueText = $c.display }
+        elseif ($null -ne $c.value) { $valueText = (Format-Num $c.value 2) + ' ' + $c.unit }
+        else { $valueText = '—' }
         $null = $lines.Add("| $($c.section) | $($c.name) | $valueText | $limitText | $($c.status) | $($c.note) |")
     }
     $null = $lines.Add('')
