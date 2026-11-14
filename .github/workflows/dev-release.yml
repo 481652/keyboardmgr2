@@ -47,8 +47,8 @@ jobs:
           $content = [System.IO.File]::ReadAllText((Resolve-Path $assemblyInfo))
           $match = [regex]::Match($content, 'AssemblyVersion\("(\d+)\.(\d+)\.(\d+)\.\d+"\)')
           if (-not $match.Success) { throw "无法从 AssemblyInfo.vb 解析版本号" }
-          # 前三段沿用源码版本，第四段使用自增的构建号，保证每次提交都更高
-          $version = "{0}.{1}.{2}.{3}" -f $match.Groups[1].Value, $match.Groups[2].Value, $match.Groups[3].Value, "${{ github.run_number }}"
+          # 开发版本不伪装成正式版本：正式版本由 master 的 AssemblyVersion 发布。
+          $version = "{0}.{1}.{2}-dev.{3}" -f $match.Groups[1].Value, $match.Groups[2].Value, $match.Groups[3].Value, "${{ github.run_number }}"
           Write-Host "发布版本: $version"
           "version=$version" >> $env:GITHUB_OUTPUT
 
@@ -58,8 +58,10 @@ jobs:
           $version = "${{ steps.version.outputs.version }}"
           $assemblyInfo = Resolve-Path "keyboardmgr2\My Project\AssemblyInfo.vb"
           $content = [System.IO.File]::ReadAllText($assemblyInfo)
-          $content = $content -replace 'AssemblyVersion\("\d+\.\d+\.\d+\.\d+"\)', "AssemblyVersion(`"$version`")"
-          $content = $content -replace 'AssemblyFileVersion\("\d+\.\d+\.\d+\.\d+"\)', "AssemblyFileVersion(`"$version`")"
+          # .NET Framework AssemblyVersion 仍必须是四段数字；开发标签只用于 ZIP/Release 名称。
+          $buildVersion = "{0}.{1}.{2}.${{ github.run_number }}" -f $version.Split('-')[0].Split('.')[0], $version.Split('-')[0].Split('.')[1], $version.Split('-')[0].Split('.')[2]
+          $content = $content -replace 'AssemblyVersion\("\d+\.\d+\.\d+\.\d+"\)', "AssemblyVersion(`"$buildVersion`")"
+          $content = $content -replace 'AssemblyFileVersion\("\d+\.\d+\.\d+\.\d+"\)', "AssemblyFileVersion(`"$buildVersion`")"
           # 保留原来的 UTF-8 BOM，避免中文资源字符串被破坏
           [System.IO.File]::WriteAllText($assemblyInfo, $content, (New-Object System.Text.UTF8Encoding($true)))
 
