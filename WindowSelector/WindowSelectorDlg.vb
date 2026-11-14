@@ -1,25 +1,11 @@
 ﻿
 Imports WindowSelector.Selector
 
-'用于 ListBox 展示的条目：标题显示给用户，句柄用于快速取值
-Public Class WindowItem
-    Public ReadOnly Property Hwnd As IntPtr
-    Public ReadOnly Property Title As String
-    Public Sub New(hwnd As IntPtr, title As String)
-        Me.Hwnd = hwnd
-        Me.Title = title
-    End Sub
-    Public Overrides Function ToString() As String
-        Return Title
-    End Function
-End Class
-
 Public Class WindowSelectorDlg
 
     Public Property SelectedWindowHwnd As IntPtr '这个属性用于返回用户选择的窗体句柄
 
     Private Sub Form1_Load(sender As Object, e As EventArgs) Handles MyBase.Load
-        '仅枚举一次，将 (句柄, 标题) 保存到 ListBox 条目中
         Dim windows = Class1.GetOpenWindows()
         For Each window In windows
             ListBox1.Items.Add(New WindowItem(window.Key, window.Value))
@@ -41,4 +27,25 @@ Public Class WindowSelectorDlg
 #Enable Warning BC42025
         Close()
     End Sub
+
+    Private Sub Button2_Click(sender As Object, e As EventArgs) Handles Button2.Click
+        ListBox1.Items.Clear()
+        Dim windows = Class1.GetOpenWindows()
+        For Each window In windows
+            ListBox1.Items.Add(New WindowItem(window.Key, window.Value))
+        Next
+    End Sub
+End Class
+
+
+Public Class WindowItem
+    Public ReadOnly Property Hwnd As IntPtr
+    Public ReadOnly Property Title As String
+    Public Sub New(hwnd As IntPtr, title As String)
+        Me.Hwnd = hwnd
+        Me.Title = title
+    End Sub
+    Public Overrides Function ToString() As String
+        Return Title
+    End Function
 End Class
