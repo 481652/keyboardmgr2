@@ -10,7 +10,17 @@
 
 ## 快速开始
 
+> **路径前提**：下面的相对路径命令要求当前目录是**仓库根目录**。
+> 如果报错 `-File 形式参数的实际参数"scripts\perf-suite.ps1"不存在`，说明 PowerShell 的当前目录不在仓库根目录——用根目录的 `perf-test.cmd` 或绝对路径即可。
+>
+> 另外：如果 **keyboardmgr2 正在运行**，套件会拒绝执行（避免单实例/热键干扰）；请先退出程序，或在确认可以关闭它时加 `-KillExisting`。
+
+在仓库根目录运行：
+
 ```powershell
+# 最省事：根目录启动器（自动定位脚本，可在任意目录通过绝对路径调用）
+.\perf-test.cmd -Quick
+
 # 快速模式（默认，推荐日常用）
 powershell -ExecutionPolicy Bypass -File scripts\perf-suite.ps1
 
@@ -22,6 +32,14 @@ powershell -ExecutionPolicy Bypass -File scripts\perf-suite.ps1 -Quick -NoClick
 
 # 把当前结果设为回归基线（之后每次运行自动对比）
 powershell -ExecutionPolicy Bypass -File scripts\perf-suite.ps1 -Quick -UpdateBaseline
+```
+
+在任意目录运行（用绝对路径）：
+
+```powershell
+& 'D:\文档\Visual Studio\Projects\keyboardmgr2_\perf-test.cmd' -Quick
+# 或者
+powershell -ExecutionPolicy Bypass -File 'D:\文档\Visual Studio\Projects\keyboardmgr2_\scripts\perf-suite.ps1' -Quick
 ```
 
 运行结束后会在 `.perf\results\<时间戳>\` 生成：
