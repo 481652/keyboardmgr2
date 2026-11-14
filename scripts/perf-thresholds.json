@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "description": "键鼠管家性能测试套件阈值配置。修改此文件即可调整验收标准；-UpdateBaseline 会用当前结果生成基线文件。",
+  "baselineTolerancePct": 30,
+  "quick": {
+    "buildMode": "incremental",
+    "startupRuns": 3,
+    "idleTraySeconds": 45,
+    "idleWindowSeconds": 20,
+    "clickIntervals": [10, 50, 100],
+    "clickRepeats": 2,
+    "clickDurationMs": 1500,
+    "runKeyboardTest": true,
+    "rapidfireQuick": true
+  },
+  "full": {
+    "buildMode": "rebuild",
+    "startupRuns": 5,
+    "idleTraySeconds": 120,
+    "idleWindowSeconds": 60,
+    "clickIntervals": [1, 5, 10, 25, 50, 100],
+    "clickRepeats": 3,
+    "clickDurationMs": 2000,
+    "runKeyboardTest": true,
+    "rapidfireQuick": false
+  },
+  "limits": {
+    "buildSeconds": 120,
+    "startup": {
+      "inputIdleMs": 1200,
+      "visibleMs": 1800,
+      "cpuQuietMs": 8000,
+      "workingSetMB": 220
+    },
+    "idle": {
+      "avgCpuPct": 3.0,
+      "windowCpuPct": 3.5,
+      "workingSetMB": 220,
+      "handleDrift": 80,
+      "uiPingMaxMs": 250
+    },
+    "click": {
+      "nativeMeanTolerancePct": 15,
+      "nativeMeanToleranceAbsMs": 2.0,
+      "managedMeanTolerancePct": 35,
+      "managedMeanToleranceAbsMs": 3.0,
+      "lossRateMaxPct": { "1": 75, "5": 40, "10": 20, "25": 10, "50": 10, "100": 5 },
+      "cpuOneCoreMaxPct": 70
+    },
+    "rapidfire": {
+      "achievedAvgOverPct": 50,
+      "p95MaxMs": 350,
+      "uiPingMaxMs": 300,
+      "firstItemMaxMs": 2000,
+      "cpuPctMax": 45
+    },
+    "data": {
+      "serialize100kMaxMs": 200,
+      "deserialize100kMaxMs": 150,
+      "save100kMaxMs": 200,
+      "load100kMaxMs": 150,
+      "settingsRead1000MaxMs": 30
+    }
+  }
+}

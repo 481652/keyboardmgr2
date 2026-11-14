@@ -98,6 +98,14 @@ Module OpCoreNative
     Private Function TypeText32(text As String) As Integer
     End Function
 
+    ' T14 (F-03): 设置组合键按下→抬起的保持时长（1~20ms，默认 3ms）
+    <DllImport("OpCore64.dll", EntryPoint:="OpCore_SetComboHoldMs", CallingConvention:=CallingConvention.StdCall)>
+    Private Function SetComboHoldMs64(holdMs As Integer) As Integer
+    End Function
+    <DllImport("OpCore32.dll", EntryPoint:="OpCore_SetComboHoldMs", CallingConvention:=CallingConvention.StdCall)>
+    Private Function SetComboHoldMs32(holdMs As Integer) As Integer
+    End Function
+
 #End Region
 
     Private _is64 As Boolean = Environment.Is64BitProcess
@@ -188,6 +196,11 @@ Module OpCoreNative
 
     Public Function TypeText(text As String) As Integer
         If _is64 Then Return TypeText64(text) Else Return TypeText32(text)
+    End Function
+
+    '设置组合键按住时长（1~20ms）；返回 0 成功，2 参数越界
+    Public Function SetComboHoldMs(holdMs As Integer) As Integer
+        If _is64 Then Return SetComboHoldMs64(holdMs) Else Return SetComboHoldMs32(holdMs)
     End Function
 
 End Module

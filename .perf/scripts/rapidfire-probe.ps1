@@ -5,7 +5,8 @@ param(
     [string]$Exe = 'D:\文档\Visual Studio\Projects\keyboardmgr2_\keyboardmgr2\bin\Release\keyboardmgr2.exe',
     [string]$TargetExe = 'D:\文档\Visual Studio\Projects\keyboardmgr2_\.perf\scripts\PerfTarget.exe',
     [string]$WorkDir = 'D:\文档\Visual Studio\Projects\keyboardmgr2_\.perf',
-    [string]$OutJson = 'D:\文档\Visual Studio\Projects\keyboardmgr2_\.perf\data\rapidfire.json'
+    [string]$OutJson = 'D:\文档\Visual Studio\Projects\keyboardmgr2_\.perf\data\rapidfire.json',
+    [switch]$Quick
 )
 $ErrorActionPreference = 'Stop'
 
@@ -362,9 +363,15 @@ function Measure-Scenario([string]$name, [int]$items, [int]$intervalMs, [int]$st
     Write-Host ("[{0}] enters={1} first={2}ms total={3}ms avgInterval={4}ms sd={5} p95={6} max={7} stopLatency={8}ms cpuPct={9}% pingMax={10}ms timeouts={11} finished={12}" -f $name, $relTimes.Count, $result.firstEnterMs, $result.totalMs, $stat.mean, $stat.sd, $stat.p95, $stat.max, $stopLatency, $result.cpuPctDuring, $pingStats.maxMs, $pingStats.timeouts, $finished)
 }
 
-Measure-Scenario 'throughput-100ms' 60 100 0
-Measure-Scenario 'stop-latency' 400 100 6
-Measure-Scenario 'throughput-50ms' 60 50 0
+if ($Quick) {
+    # 快速模式：30 条 + 停止响应，约 15-20 秒
+    Measure-Scenario 'throughput-100ms' 30 100 0
+    Measure-Scenario 'stop-latency' 200 100 5
+} else {
+    Measure-Scenario 'throughput-100ms' 60 100 0
+    Measure-Scenario 'stop-latency' 400 100 6
+    Measure-Scenario 'throughput-50ms' 60 50 0
+}
 
 $results | ConvertTo-Json -Depth 6 | Out-File -FilePath $OutJson -Encoding utf8
 Write-Host "saved: $OutJson"

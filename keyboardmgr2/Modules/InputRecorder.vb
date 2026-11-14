@@ -1,5 +1,6 @@
 '录制捕获：全局键盘钩子 + 鼠标钩子捕获按键/按钮/滚轮事件，独立线程按用户设置的频率采样鼠标位置。
 '事件时间戳均相对于录制起点（Stopwatch 毫秒）。
+Imports System.Collections.Concurrent
 Imports System.Runtime.InteropServices
 Imports System.Threading
 
@@ -12,8 +13,9 @@ Module InputRecorder
     Private keyboardProc As HookProc
     Private mouseProc As HookProc
 
-    Private events As List(Of KbmrEvent)
-    Private ReadOnly eventsLock As New Object()
+    Private events As ConcurrentQueue(Of KbmrEvent)
+    Private eventCount As Integer
+    Private wasTruncated As Boolean
     Private ReadOnly watch As New Diagnostics.Stopwatch()
     Private samplerThread As Thread
     Private sampling As Boolean
@@ -21,6 +23,10 @@ Module InputRecorder
     Private sampleInterval As Integer = 15
     Private lastSampleX As Integer
     Private lastSampleY As Integer
+    '开始录制时的屏幕像素尺寸与 DPI 缩放：录制中途用户可能改分辨率，文件头以开始时刻为准
+    Private startScreenWidth As Integer = 1
+    Private startScreenHeight As Integer = 1
+    Private startDpiScalePermille As Integer = 1000
 
     Public ReadOnly Property IsRecording As Boolean
         Get
@@ -31,7 +37,12 @@ Module InputRecorder
     Public Sub StartRecording(sampleIntervalMs As Integer)
         If recording Then Return
         sampleInterval = Math.Max(1, Math.Min(1000, sampleIntervalMs))
-        events = New List(Of KbmrEvent)()
+        startScreenWidth = ScreenMetrics.GetPrimaryScreenWidth()
+        startScreenHeight = ScreenMetrics.GetPrimaryScreenHeight()
+        startDpiScalePermille = ScreenMetrics.GetDpiScalePermille()
+        eventCount = 0
+        wasTruncated = False
+        events = New ConcurrentQueue(Of KbmrEvent)()
         watch.Restart()
         Dim point As New POINTAPI
         If GetCursorPos(point) Then
@@ -49,30 +60,83 @@ Module InputRecorder
         samplerThread.Start()
     End Sub
 
-    Public Function StopRecording() As KbmrRecording
+    Public Async Function StopRecordingAsync() As Threading.Tasks.Task(Of KbmrRecording)
         If Not recording Then Return Nothing
         recording = False
         sampling = False
         UninstallHooks()
-        If samplerThread IsNot Nothing Then
-            samplerThread.Join(1000)
-            samplerThread = Nothing
-        End If
+        Dim stoppedSampler As Thread = samplerThread
+        samplerThread = Nothing
         watch.Stop()
-        Dim result As New KbmrRecording With {
-            .Name = "录制",
-            .SampleIntervalMs = sampleInterval,
-            .ScreenWidth = CInt(Math.Round(SystemParameters.PrimaryScreenWidth)),
-            .ScreenHeight = CInt(Math.Round(SystemParameters.PrimaryScreenHeight)),
-            .DurationMs = watch.ElapsedMilliseconds,
-            .CreatedUtc = DateTime.UtcNow
-        }
-        SyncLock eventsLock
-            result.Events.AddRange(events)
-        End SyncLock
+        '记录与事件坐标同一坐标空间的像素分辨率，以及系统缩放（用于显示）
+        Dim queue As ConcurrentQueue(Of KbmrEvent) = events
         events = Nothing
+        Dim capturedDuration As Long = watch.ElapsedMilliseconds
+        Dim wasTruncatedSnapshot As Boolean = wasTruncated
+        Dim result As KbmrRecording = Await Threading.Tasks.Task.Run(
+            Function()
+                '事件复制、稳定排序和热键残留裁剪也在线程池执行，避免长录制停止时卡 UI。
+                If stoppedSampler IsNot Nothing Then stoppedSampler.Join(1000)
+                Dim completed As New KbmrRecording With {
+                    .Name = "录制", .SampleIntervalMs = sampleInterval,
+                    .ScreenWidth = Math.Max(1, startScreenWidth), .ScreenHeight = Math.Max(1, startScreenHeight),
+                    .DpiScalePermille = startDpiScalePermille, .DurationMs = capturedDuration, .CreatedUtc = DateTime.UtcNow
+                }
+                If queue IsNot Nothing Then
+                    Dim collected As KbmrEvent() = queue.ToArray()
+                    Dim ordered As List(Of KbmrEvent) = collected.OrderBy(Function(e) e.OffsetMs).ToList()
+                    completed.Events.AddRange(TrimHotkeyArtifacts(ordered))
+                End If
+                Return completed
+            End Function)
+        LastRecordingTruncated = wasTruncatedSnapshot
         Return result
     End Function
+
+    '最近一次录制是否因达到事件上限（KbmrCodec.MaximumEventCount）而被截断
+    Public Property LastRecordingTruncated As Boolean
+
+    '去掉开始/停止录制热键留下的残片：
+    '- 开头"只有抬起没有按下"的键（按下发生在录制开始前，即开始录制热键）；
+    '- 结尾"只有按下没有抬起"的键（停止录制热键：热键触发时录制已结束，抬起没被录到）。
+    '后者若保留，回放到末尾会注入停止热键（RegisterHotKey 对注入输入同样生效），
+    '导致循环回放在第一遍结束时被自己停掉，并且修饰键会一直处于按下状态。
+    Friend Function TrimHotkeyArtifacts(ordered As List(Of KbmrEvent)) As List(Of KbmrEvent)
+        Dim pressed As New HashSet(Of UShort)
+        Dim leadingOrphanUps As New HashSet(Of Integer)
+        Dim lastDownIndex As New Dictionary(Of UShort, Integer)
+        For index As Integer = 0 To ordered.Count - 1
+            Dim item As KbmrEvent = ordered(index)
+            If item.Kind = KbmrEventKind.KeyDown Then
+                pressed.Add(item.Vk)
+                lastDownIndex(item.Vk) = index
+            ElseIf item.Kind = KbmrEventKind.KeyUp Then
+                If Not pressed.Remove(item.Vk) Then leadingOrphanUps.Add(index)
+            End If
+        Next
+        '结束时仍处于按下状态的键：删掉它们从最后一次按下开始的所有按下事件（含自动重复）
+        Dim trailingDowns As New HashSet(Of Integer)
+        For Each vk As UShort In pressed
+            Dim firstStuck As Integer = lastDownIndex(vk)
+            '向前找到这一段连续按住的起点（自动重复会产生多个 KeyDown）
+            For index As Integer = firstStuck To 0 Step -1
+                Dim item As KbmrEvent = ordered(index)
+                If item.Vk <> vk Then Continue For
+                If item.Kind = KbmrEventKind.KeyUp Then Exit For
+                If item.Kind = KbmrEventKind.KeyDown Then trailingDowns.Add(index)
+            Next
+        Next
+        If leadingOrphanUps.Count = 0 AndAlso trailingDowns.Count = 0 Then Return ordered
+        Dim trimmed As New List(Of KbmrEvent)(ordered.Count)
+        For index As Integer = 0 To ordered.Count - 1
+            If leadingOrphanUps.Contains(index) OrElse trailingDowns.Contains(index) Then Continue For
+            trimmed.Add(ordered(index))
+        Next
+        '录制至少保留一个事件（起点的鼠标位置），否则无法保存
+        If trimmed.Count = 0 Then Return ordered
+        Return trimmed
+    End Function
+
 
     Private Sub SamplerLoop()
         While sampling
@@ -89,8 +153,17 @@ Module InputRecorder
         End While
     End Sub
 
+    'T17：钩子线程与采样线程只做无锁入队，停止录制时再一次性收集
     Private Sub AddEvent(kind As KbmrEventKind, vk As UShort, button As Byte, x As Integer, y As Integer, delta As Integer)
-        Dim item As New KbmrEvent With {
+        Dim queue As ConcurrentQueue(Of KbmrEvent) = events
+        If queue Is Nothing Then Return
+        '先占位计数，超过上限则记录截断（T19：停止时提示，而非静默丢弃）
+        If Interlocked.Increment(eventCount) > KbmrCodec.MaximumEventCount Then
+            Interlocked.Decrement(eventCount)
+            wasTruncated = True
+            Return
+        End If
+        queue.Enqueue(New KbmrEvent With {
             .OffsetMs = watch.ElapsedMilliseconds,
             .Kind = kind,
             .Vk = vk,
@@ -98,10 +171,7 @@ Module InputRecorder
             .X = x,
             .Y = y,
             .Delta = delta
-        }
-        SyncLock eventsLock
-            If events IsNot Nothing AndAlso events.Count < KbmrCodec.MaximumEventCount Then events.Add(item)
-        End SyncLock
+        })
     End Sub
 
     Private Sub InstallHooks()
@@ -129,30 +199,43 @@ Module InputRecorder
         mouseProc = Nothing
     End Sub
 
+    'T17：先判 wParam 再读结构体；只读取需要的字段，避免整结构 PtrToStructure 装箱
     Private Function KeyboardHookProc(nCode As Integer, wParam As IntPtr, lParam As IntPtr) As IntPtr
         If nCode >= 0 AndAlso recording Then
-            Try
-                Dim data As KBDLLHOOKSTRUCT = Marshal.PtrToStructure(Of KBDLLHOOKSTRUCT)(lParam)
-                If (data.flags And LLKHF_INJECTED) = 0 Then
-                    Dim message As Integer = wParam.ToInt32()
-                    If message = WM_KEYDOWN OrElse message = WM_SYSKEYDOWN Then
-                        AddEvent(KbmrEventKind.KeyDown, CUShort(data.vkCode And &HFFUI), 0, 0, 0, 0)
-                    ElseIf message = WM_KEYUP OrElse message = WM_SYSKEYUP Then
-                        AddEvent(KbmrEventKind.KeyUp, CUShort(data.vkCode And &HFFUI), 0, 0, 0, 0)
+            Dim message As Integer = wParam.ToInt32()
+            Dim kind As KbmrEventKind
+            Dim interesting As Boolean = True
+            If message = WM_KEYDOWN OrElse message = WM_SYSKEYDOWN Then
+                kind = KbmrEventKind.KeyDown
+            ElseIf message = WM_KEYUP OrElse message = WM_SYSKEYUP Then
+                kind = KbmrEventKind.KeyUp
+            Else
+                interesting = False
+            End If
+            If interesting Then
+                Try
+                    'KBDLLHOOKSTRUCT: vkCode @0, scanCode @4, flags @8
+                    Dim flags As Integer = Marshal.ReadInt32(lParam, 8)
+                    If (flags And CInt(LLKHF_INJECTED)) = 0 Then
+                        Dim vkCode As Integer = Marshal.ReadInt32(lParam, 0)
+                        AddEvent(kind, CUShort(vkCode And &HFF), 0, 0, 0, 0)
                     End If
-                End If
-            Catch
-            End Try
+                Catch
+                End Try
+            End If
         End If
         Return CallNextHookEx(keyboardHook, nCode, wParam, lParam)
     End Function
 
     Private Function MouseHookProc(nCode As Integer, wParam As IntPtr, lParam As IntPtr) As IntPtr
         If nCode >= 0 AndAlso recording Then
+            Dim message As Integer = wParam.ToInt32()
+            '鼠标移动由采样线程负责，这里直接放行（最高频的消息，零开销）
+            If message = WM_MOUSEMOVE Then Return CallNextHookEx(mouseHook, nCode, wParam, lParam)
             Try
                 Dim data As MSLLHOOKSTRUCT = Marshal.PtrToStructure(Of MSLLHOOKSTRUCT)(lParam)
                 If (data.flags And LLMHF_INJECTED) = 0 Then
-                    Select Case wParam.ToInt32()
+                    Select Case message
                         Case WM_LBUTTONDOWN
                             AddEvent(KbmrEventKind.MouseDown, 0, 1, data.pt.x, data.pt.y, 0)
                         Case WM_LBUTTONUP
@@ -187,6 +270,7 @@ Module InputRecorder
     Private Const WM_KEYUP As Integer = &H101
     Private Const WM_SYSKEYDOWN As Integer = &H104
     Private Const WM_SYSKEYUP As Integer = &H105
+    Private Const WM_MOUSEMOVE As Integer = &H200
     Private Const WM_LBUTTONDOWN As Integer = &H201
     Private Const WM_LBUTTONUP As Integer = &H202
     Private Const WM_RBUTTONDOWN As Integer = &H204

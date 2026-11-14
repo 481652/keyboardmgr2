@@ -27,29 +27,35 @@
     <WindowsTargetPlatformVersion>10.0.22621.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <!-- 默认工具集统一为 v143（VS2022，与 CI 一致）。本机未安装 v143 时回退到 v145（VS2026），并在构建时给出警告。
+       显式传入 /p:PlatformToolset=xxx 时以传入值为准。 -->
+  <PropertyGroup>
+    <OpCoreToolset>v143</OpCoreToolset>
+    <OpCoreToolset Condition="!Exists('$(VCTargetsPath)\Platforms\$(Platform)\PlatformToolsets\v143') And Exists('$(VCTargetsPath)\Platforms\$(Platform)\PlatformToolsets\v145')">v145</OpCoreToolset>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>$(OpCoreToolset)</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>$(OpCoreToolset)</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>$(OpCoreToolset)</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v145</PlatformToolset>
+    <PlatformToolset>$(OpCoreToolset)</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -157,6 +163,10 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
   <!-- 构建完成后把 DLL 拷贝到主程序输出目录（使用 MSBuild 任务，避免 cmd 批处理编码问题） -->
+  <Target Name="ShowToolsetInfo" BeforeTargets="PrepareForBuild">
+    <Message Importance="high" Text="OpCore: 使用工具集 $(PlatformToolset) (默认: $(OpCoreToolset))" />
+    <Message Importance="high" Condition="'$(OpCoreToolset)'=='v145'" Text="本机缺失 v143（VS2022），已回退到 v145。安装 VS2022 Build Tools 后可与 CI 保持一致。" />
+  </Target>
   <Target Name="CopyOpCoreOutput" AfterTargets="Build">
     <MakeDir Directories="$(MSBuildProjectDirectory)\..\keyboardmgr2\bin\$(Configuration)" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(MSBuildProjectDirectory)\..\keyboardmgr2\bin\$(Configuration)" />

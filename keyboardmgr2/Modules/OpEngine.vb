@@ -4,6 +4,7 @@
 Module OpEngine
 
     Private _useNative As Boolean = False
+    Private _nativeFallbackShown As Boolean = False
 
     Public Sub Initialize()
         Dim mode As Integer = 0
@@ -14,6 +15,7 @@ Module OpEngine
             If Not OpCoreNative.IsAvailable() Then
                 ShowMyMessage("原生操作内核（OpCore 组件）加载失败，已自动回退到兼容内核。")
                 _useNative = False
+                _nativeFallbackShown = True
             End If
         ElseIf mode = 2 Then
             '强制兼容
@@ -22,6 +24,43 @@ Module OpEngine
             '自动：优先原生，不可用则兼容
             _useNative = OpCoreNative.IsAvailable()
         End If
+        ApplyComboHoldMs()
+    End Sub
+
+    Public Const DefaultComboHoldMs As Integer = 3
+    Public Const MinimumComboHoldMs As Integer = 1
+    Public Const MaximumComboHoldMs As Integer = 20
+
+    '读取设置中的组合键按住时长，越界时回退默认值
+    Public Function ReadComboHoldMs() As Integer
+        Dim holdMs As Integer = DefaultComboHoldMs
+        If Not Integer.TryParse(ReadSetting("ComboHoldMs", DefaultComboHoldMs).ToString(), holdMs) OrElse
+           holdMs < MinimumComboHoldMs OrElse holdMs > MaximumComboHoldMs Then
+            holdMs = DefaultComboHoldMs
+        End If
+        Return holdMs
+    End Function
+
+    '组合键按住时长（P2）：同时作用于托管侧 SendKeyCombination 与原生 OpCore（KeyCombo / 键盘连点组合键路径）
+    Private Sub ApplyComboHoldMs()
+        Dim holdMs As Integer = ReadComboHoldMs()
+        UserInputHandler.ComboHoldMilliseconds = holdMs
+        If OpCoreNative.IsAvailable() Then
+            Try
+                OpCoreNative.SetComboHoldMs(holdMs)
+            Catch ex As Exception When TypeOf ex Is DllNotFoundException OrElse TypeOf ex Is EntryPointNotFoundException
+                '旧版 OpCore DLL 没有该导出：原生侧保持其内置默认值
+            End Try
+        End If
+    End Sub
+    
+    ' 原生内核调用失败时自动回退托管内核（F-22）
+    Private Sub FallbackToManaged(operationName As String)
+        If Not _nativeFallbackShown Then
+            ShowMyMessage("原生操作内核（OpCore）" & operationName & "失败，已自动回退到兼容内核。后续操作将使用兼容内核。")
+            _nativeFallbackShown = True
+        End If
+        _useNative = False
     End Sub
 
     Public ReadOnly Property UsesNativeCore() As Boolean
@@ -34,7 +73,16 @@ Module OpEngine
 
     Public Sub StartMouseClick(intervalMs As Integer, randomSpeedOffset As Boolean, randomPosOffset As Boolean, baseX As Integer, baseY As Integer, mouseButton As Integer)
         If _useNative Then
-            OpCoreNative.StartMouseClick(intervalMs, randomSpeedOffset, randomPosOffset, baseX, baseY, mouseButton)
+            Try
+                Dim result As Integer = OpCoreNative.StartMouseClick(intervalMs, randomSpeedOffset, randomPosOffset, baseX, baseY, mouseButton)
+                If result = 1 Then '1=句柄/定时器创建失败；2=参数无效（不回退）
+                    FallbackToManaged("启动鼠标连点")
+                    OpCoreManaged.StartMouseClick(intervalMs, randomSpeedOffset, randomPosOffset, baseX, baseY, mouseButton)
+                End If
+            Catch ex As Exception When TypeOf ex Is DllNotFoundException OrElse TypeOf ex Is EntryPointNotFoundException
+                FallbackToManaged("调用")
+                OpCoreManaged.StartMouseClick(intervalMs, randomSpeedOffset, randomPosOffset, baseX, baseY, mouseButton)
+            End Try
         Else
             OpCoreManaged.StartMouseClick(intervalMs, randomSpeedOffset, randomPosOffset, baseX, baseY, mouseButton)
         End If
@@ -42,7 +90,16 @@ Module OpEngine
 
     Public Sub StartKeyClick(intervalMs As Integer, keys As UShort())
         If _useNative Then
-            OpCoreNative.StartKeyClick(intervalMs, keys)
+            Try
+                Dim result As Integer = OpCoreNative.StartKeyClick(intervalMs, keys)
+                If result = 1 Then '1=句柄/定时器创建失败；2=参数无效（不回退）
+                    FallbackToManaged("启动按键连点")
+                    OpCoreManaged.StartKeyClick(intervalMs, keys)
+                End If
+            Catch ex As Exception When TypeOf ex Is DllNotFoundException OrElse TypeOf ex Is EntryPointNotFoundException
+                FallbackToManaged("调用")
+                OpCoreManaged.StartKeyClick(intervalMs, keys)
+            End Try
         Else
             OpCoreManaged.StartKeyClick(intervalMs, keys)
         End If

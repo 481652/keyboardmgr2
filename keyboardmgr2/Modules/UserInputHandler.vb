@@ -6,6 +6,25 @@ Imports System.Windows.Automation
 
 
 Module UserInputHandler
+    '组合键按住时长（毫秒，1~20ms，默认 3ms）；由 OpEngine 初始化时设置
+    Public ComboHoldMilliseconds As Integer = 3
+
+    'UIA 元素缓存（避免重复 FindAll）
+    Private ReadOnly uiaCacheLock As New Object()
+    Private cachedInputHwnd As IntPtr
+    Private cachedInputElement As AutomationElement
+    Private cachedButtonHwnd As IntPtr
+    Private cachedButtonElement As AutomationElement
+
+    Public Sub ResetUiaCache()
+        SyncLock uiaCacheLock
+            cachedInputHwnd = IntPtr.Zero
+            cachedInputElement = Nothing
+            cachedButtonHwnd = IntPtr.Zero
+            cachedButtonElement = Nothing
+        End SyncLock
+    End Sub
+
     '实现KeyTextBox的功能
 #Region "KeyTextbox"
 
@@ -64,10 +83,16 @@ Module UserInputHandler
 
     Public Sub SendKeyCombination(keys As List(Of UShort))
         SendKeyCombinationDown(keys)
-        Threading.Thread.Sleep(50) ' 添加延时确保按键事件被识别
+        ' T14 (F-03) + P2: 可配置持续按压时长（避免游戏/IDE 丢键）
+        Dim holdMs As Integer = Math.Max(1, Math.Min(20, ComboHoldMilliseconds))
+        Dim sw = Diagnostics.Stopwatch.StartNew()
+        Do While sw.ElapsedMilliseconds < holdMs
+            Threading.Thread.SpinWait(100)
+        Loop
         SendKeyCombinationUp(keys)
     End Sub
 
+    '发送 Enter 或 Shift+Enter（用于连发按键发送）
     Public Sub SendKeyCombinationDown(keys As List(Of UShort))
         For Each key In keys
             If IsModifierKey(key) Then
@@ -280,18 +305,23 @@ Module UserInputHandler
     '指定 targetHwnd 时以该窗口内的控件为准（不依赖前台焦点），否则使用当前前台/焦点控件。
 #Region "DirectTextInsert"
 
-    Public Function InsertTextToTarget(text As String, Optional targetHwnd As IntPtr = Nothing, Optional inputPointX As Integer = Integer.MinValue, Optional inputPointY As Integer = Integer.MinValue) As Boolean
+    Public Function InsertTextToTarget(text As String, Optional targetHwnd As IntPtr = Nothing,
+                                      Optional inputPointX As Integer = Integer.MinValue,
+                                      Optional inputPointY As Integer = Integer.MinValue,
+                                      Optional ct As Threading.CancellationToken = Nothing) As Boolean
         If String.IsNullOrEmpty(text) Then Return True
 
         If targetHwnd <> IntPtr.Zero Then
             '0. 用户点选过输入框位置：直接点击该位置后模拟键盘输入（最可靠）
-            If inputPointX <> Integer.MinValue AndAlso TryClickPointAndType(text, targetHwnd, inputPointX, inputPointY) Then Return True
+            If inputPointX <> Integer.MinValue AndAlso TryClickPointAndType(text, targetHwnd, inputPointX, inputPointY, ct) Then Return True
+            If ct.IsCancellationRequested Then Return False
             '1. UI Automation：目标窗口内定位编辑控件并直接写入
             If TrySetTextViaUia(text, targetHwnd) Then Return True
             '2. WM_SETTEXT：向目标窗口线程的焦点控件直接设置文本
             If TrySetTextViaWmSettext(text, targetHwnd) Then Return True
             '3. 点击定位：找到可能的输入框，点击获得焦点后模拟键盘输入（兼容不支持 UIA 写入的应用）
-            If TryClickAndType(text, targetHwnd) Then Return True
+            If TryClickAndType(text, targetHwnd, ct) Then Return True
+            If ct.IsCancellationRequested Then Return False
             '4. 回退：操作内核模拟键盘输入（依赖目标已激活且已有焦点）
             Return OpEngine.TypeText(text)
         End If
@@ -303,14 +333,14 @@ Module UserInputHandler
     End Function
 
     '按用户点选的窗口内相对坐标点击并输入文本
-    Private Function TryClickPointAndType(text As String, targetHwnd As IntPtr, relX As Integer, relY As Integer) As Boolean
+    Private Function TryClickPointAndType(text As String, targetHwnd As IntPtr, relX As Integer, relY As Integer, ct As Threading.CancellationToken) As Boolean
         Try
             Dim rect As RECTAPI
             If Not GetWindowRectApi(targetHwnd, rect) Then Return False
             Dim ax As Integer = rect.Left + relX
             Dim ay As Integer = rect.Top + relY
             If Not OpEngine.MouseClick(1, ax, ay) Then Return False
-            Threading.Thread.Sleep(80)
+            If Not DelayOrCancel(80, ct) Then Return False
             Return OpEngine.TypeText(text)
         Catch
             Return False
@@ -328,8 +358,12 @@ Module UserInputHandler
                     Dim focused As AutomationElement = AutomationElement.FromHandle(focusHwnd)
                     If focused IsNot Nothing AndAlso TrySetElementValue(focused, text) Then Return True
                 End If
+                '先用缓存的输入框（同一目标窗口），失效时再全窗口查找并刷新缓存（F-01/F-09）
+                Dim cached As AutomationElement = GetCachedInputElement(targetHwnd)
+                If cached IsNot Nothing AndAlso TrySetElementValue(cached, text) Then Return True
                 Dim candidate As AutomationElement = FindInputElement(window)
                 If candidate Is Nothing Then Return False
+                SetCachedInputElement(targetHwnd, candidate)
                 Return TrySetElementValue(candidate, text)
             End If
 
@@ -406,23 +440,48 @@ Module UserInputHandler
     End Function
 
     '点击输入框中心获得焦点，再用操作内核模拟键盘输入（适用于不支持 UIA 写入的应用）
-    Private Function TryClickAndType(text As String, targetHwnd As IntPtr) As Boolean
+    Private Function TryClickAndType(text As String, targetHwnd As IntPtr, ct As Threading.CancellationToken) As Boolean
         Try
-            Dim window As AutomationElement = AutomationElement.FromHandle(targetHwnd)
-            If window Is Nothing Then Return False
-            Dim inputElement As AutomationElement = FindInputElement(window)
-            If inputElement Is Nothing Then Return False
+            Dim inputElement As AutomationElement = GetCachedInputElement(targetHwnd)
+            If inputElement Is Nothing Then
+                Dim window As AutomationElement = AutomationElement.FromHandle(targetHwnd)
+                If window Is Nothing Then Return False
+                inputElement = FindInputElement(window)
+                If inputElement Is Nothing Then Return False
+                SetCachedInputElement(targetHwnd, inputElement)
+            End If
             Dim rect As System.Windows.Rect = inputElement.Current.BoundingRectangle
             If rect.IsEmpty OrElse rect.Width < 10 OrElse rect.Height < 10 Then Return False
             Dim cx As Integer = CInt(rect.X + rect.Width / 2)
             Dim cy As Integer = CInt(rect.Y + rect.Height / 2)
             If Not OpEngine.MouseClick(1, cx, cy) Then Return False
-            Threading.Thread.Sleep(80)
+            If Not DelayOrCancel(80, ct) Then Return False
             Return OpEngine.TypeText(text)
         Catch
             Return False
         End Try
     End Function
+
+    '可被取消的等待：取消时立即返回 False。未提供可取消令牌时退化为普通 Sleep。
+    Private Function DelayOrCancel(milliseconds As Integer, ct As Threading.CancellationToken) As Boolean
+        If ct.CanBeCanceled Then Return Not ct.WaitHandle.WaitOne(milliseconds)
+        Threading.Thread.Sleep(milliseconds)
+        Return True
+    End Function
+
+    Private Function GetCachedInputElement(hwnd As IntPtr) As AutomationElement
+        SyncLock uiaCacheLock
+            If cachedInputHwnd = hwnd Then Return cachedInputElement
+        End SyncLock
+        Return Nothing
+    End Function
+
+    Private Sub SetCachedInputElement(hwnd As IntPtr, element As AutomationElement)
+        SyncLock uiaCacheLock
+            cachedInputHwnd = hwnd
+            cachedInputElement = element
+        End SyncLock
+    End Sub
 
     Private Function TrySetElementValue(element As AutomationElement, text As String) As Boolean
         Try
@@ -529,8 +588,20 @@ Module UserInputHandler
 
     '在目标窗口中查找常见名称的“发送”按钮并通过 UIA 调用（Invoke 优先，其次点击按钮中心）。
     '找到并触发返回 True，否则返回 False。
+    '同一目标窗口内复用上次命中的按钮元素（F-09），失效（窗口变化、元素不可用、调用失败）时才重新遍历。
     Public Function TryInvokeSendButton(hWnd As IntPtr) As Boolean
         If hWnd = IntPtr.Zero Then Return False
+        Dim cached As AutomationElement = Nothing
+        SyncLock uiaCacheLock
+            If cachedButtonHwnd = hWnd Then cached = cachedButtonElement
+        End SyncLock
+        If cached IsNot Nothing Then
+            If TryActivateButton(cached) Then Return True
+            SyncLock uiaCacheLock
+                cachedButtonHwnd = IntPtr.Zero
+                cachedButtonElement = Nothing
+            End SyncLock
+        End If
         Try
             Dim window As AutomationElement = AutomationElement.FromHandle(hWnd)
             If window Is Nothing Then Return False
@@ -544,21 +615,32 @@ Module UserInputHandler
                 Catch
                 End Try
                 If Not IsSendButtonName(name) Then Continue For
-                Dim pattern As Object = Nothing
-                If button.TryGetCurrentPattern(InvokePattern.Pattern, pattern) AndAlso pattern IsNot Nothing Then
-                    DirectCast(pattern, InvokePattern).Invoke()
-                    Return True
-                End If
-                Dim rect As System.Windows.Rect = Nothing
-                Try
-                    rect = button.Current.BoundingRectangle
-                Catch
-                End Try
-                If Not rect.IsEmpty AndAlso rect.Width > 0 AndAlso rect.Height > 0 Then
-                    OpEngine.MouseClick(1, CInt(rect.X + rect.Width / 2), CInt(rect.Y + rect.Height / 2))
+                If TryActivateButton(button) Then
+                    SyncLock uiaCacheLock
+                        cachedButtonHwnd = hWnd
+                        cachedButtonElement = button
+                    End SyncLock
                     Return True
                 End If
             Next
+        Catch
+        End Try
+        Return False
+    End Function
+
+    'Invoke 优先，其次点击按钮中心；元素失效或调用失败返回 False
+    Private Function TryActivateButton(button As AutomationElement) As Boolean
+        Try
+            Dim pattern As Object = Nothing
+            If button.TryGetCurrentPattern(InvokePattern.Pattern, pattern) AndAlso pattern IsNot Nothing Then
+                DirectCast(pattern, InvokePattern).Invoke()
+                Return True
+            End If
+            Dim rect As System.Windows.Rect = button.Current.BoundingRectangle
+            If Not rect.IsEmpty AndAlso rect.Width > 0 AndAlso rect.Height > 0 Then
+                OpEngine.MouseClick(1, CInt(rect.X + rect.Width / 2), CInt(rect.Y + rect.Height / 2))
+                Return True
+            End If
         Catch
         End Try
         Return False

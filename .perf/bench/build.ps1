@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # keyboardmgr2 performance benchmark - standalone build script
 # Writes only under .perf\bench and .perf\data. Does NOT touch the main
 # project sources/vbproj/sln and does NOT start keyboardmgr2.exe.
@@ -111,6 +111,7 @@ if (-not $SkipData) {
     $dataSrc = @(
         (Join-Path $Module 'MacroModel.vb'),
         (Join-Path $Module 'KbmrCodec.vb'),
+        (Join-Path $Module 'ScreenMetrics.vb'),
         (Join-Path $Module 'RecordingStore.vb'),
         (Join-Path $Module 'KeyNameMapper.vb'),
         (Join-Path $Module 'SettingsModule.vb'),

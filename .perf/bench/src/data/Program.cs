@@ -69,6 +69,8 @@ static class Program
             bool deterministic = true;
             long fileBytes = 0, compressedBytes = 0;
             int actualEvents = 0;
+            bool metadataOk = true;
+            double metadataMs = 0;
 
             // 预热 1 次（JIT + Deflate 初始化），不计入
             byte[] warm = DataBridge.Serialize(rec);
@@ -94,6 +96,16 @@ static class Program
                 actualEvents = back == null ? -1 : back.Events.Count;
             }
 
+            string metadataPath = Path.Combine(TmpDir, "bench-metadata-" + eventCount + ".kbmr");
+            File.WriteAllBytes(metadataPath, lastBytes);
+            KbmrRecording metadata = null;
+            metadataMs = TimeMs(() => { metadata = DataBridge.LoadMetadata(metadataPath); });
+            if (metadata == null || metadata.EventsLoaded || metadata.Events.Count != 0 || metadata.EventCount != eventCount) metadataOk = false;
+            bool metadataDecodeOk = false;
+            if (metadata != null)
+                metadataDecodeOk = DataBridge.LoadEvents(metadata) && metadata.EventsLoaded && metadata.Events.Count == eventCount;
+            File.Delete(metadataPath);
+
             // 校验：离线推算的 payload 字节数 == 真实文件头中的压缩块解压后大小
             long payloadCheck = -1;
             try
@@ -102,7 +114,8 @@ static class Program
                 payloadCheck = payload.Length;
                 using (var ms = new MemoryStream())
                 {
-                    using (var ds = new DeflateStream(ms, CompressionLevel.Optimal, true)) { ds.Write(payload, 0, payload.Length); }
+                    // 与 KbmrCodec.Serialize 保持一致：Fastest + 单流
+                    using (var ds = new DeflateStream(ms, CompressionLevel.Fastest, true)) { ds.Write(payload, 0, payload.Length); }
                     if (ms.Length != compressedBytes) payloadCheck = -2; // 镜像不一致
                 }
             }
@@ -126,10 +139,13 @@ static class Program
                 { "roundtripOk", roundtripOk },
                 { "deterministic", deterministic },
                 { "deserializedEvents", actualEvents },
+                { "metadataOnlyOk", metadataOk },
+                { "metadataDecodeOk", metadataDecodeOk },
+                { "metadataOnlyMs", metadataMs },
                 { "durationMs", rec.DurationMs },
             });
             Console.WriteLine($"   file={fileBytes} B payload={payloadBytes} B compressed={compressedBytes} B " +
-                              $"ser={Median(ser):F2} ms deser={Median(deser):F2} ms");
+                               $"ser={Median(ser):F2} ms deser={Median(deser):F2} ms metadata={metadataMs:F3} ms ok={metadataOk}/{metadataDecodeOk}");
         }
         root["codec"] = codecRows;
 
@@ -320,8 +336,10 @@ static class Program
 
     static int ReadCompressedLength(byte[] file)
     {
-        // 文件头：Magic(4) + Version(2) + SampleInterval(4) + W(4) + H(4) + Duration(8) + Count(4) + Ticks(8) + CompressedLen(4) + SHA256(32)
-        return BitConverter.ToInt32(file, 4 + 2 + 4 + 4 + 4 + 8 + 4 + 8);
+        // 文件头：Magic(4) + Version(2) + SampleInterval(4) + W(4) + H(4) + [Dpi(4)，版本 2 起] + Duration(8) + Count(4) + Ticks(8) + CompressedLen(4) + SHA256(32)
+        ushort version = BitConverter.ToUInt16(file, 4);
+        int offset = 4 + 2 + 4 + 4 + 4 + (version >= 2 ? 4 : 0) + 8 + 4 + 8;
+        return BitConverter.ToInt32(file, offset);
     }
 
     static long ComputePayloadSize(KbmrRecording rec)
@@ -342,7 +360,14 @@ static class Program
                     break;
                 case KbmrEventKind.MouseDown:
                 case KbmrEventKind.MouseUp:
-                    size += 1;
+                    size += 1;                 // 按钮
+                    size += 1;                 // HasPosition 标记
+                    if (e.HasPosition)
+                    {
+                        size += VarIntSize(ZigZag(e.X - lastX));
+                        size += VarIntSize(ZigZag(e.Y - lastY));
+                        lastX = e.X; lastY = e.Y;
+                    }
                     break;
                 case KbmrEventKind.MouseMove:
                     size += VarIntSize(ZigZag(e.X - lastX));
@@ -379,6 +404,13 @@ static class Program
                     case KbmrEventKind.MouseDown:
                     case KbmrEventKind.MouseUp:
                         bw.Write(e.Button);
+                        bw.Write((byte)(e.HasPosition ? 1 : 0));
+                        if (e.HasPosition)
+                        {
+                            WriteVarInt(bw, ZigZag(e.X - lastX));
+                            WriteVarInt(bw, ZigZag(e.Y - lastY));
+                            lastX = e.X; lastY = e.Y;
+                        }
                         break;
                     case KbmrEventKind.MouseMove:
                         WriteVarInt(bw, ZigZag(e.X - lastX));

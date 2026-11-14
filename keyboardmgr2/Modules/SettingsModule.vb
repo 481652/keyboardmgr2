@@ -4,15 +4,61 @@ Imports Microsoft.Win32
 
 Module SettingsModule
     Private Const RegistryPath As String = "Software\LCS\keyboardmgr"
+    
+    ' 设置缓存（F-10）：启动时一次性读取整个键，避免每次 OpenSubKey 的开销
+    Private ReadOnly settingsCache As New Dictionary(Of String, Object)(StringComparer.OrdinalIgnoreCase)
+    Private settingsCacheInitialized As Boolean = False
+    Private ReadOnly cacheLock As New Object()
+    
+    ' 初始化缓存：一次性读取所有设置值
+    Private Sub EnsureCacheInitialized()
+        SyncLock cacheLock
+            If settingsCacheInitialized Then Return
+            Try
+                Using regKey As RegistryKey = Registry.CurrentUser.OpenSubKey(RegistryPath)
+                    If regKey IsNot Nothing Then
+                        For Each valueName In regKey.GetValueNames()
+                            settingsCache(valueName) = regKey.GetValue(valueName)
+                        Next
+                    End If
+                End Using
+                settingsCacheInitialized = True
+            Catch ex As Exception
+                ' 缓存初始化失败不影响后续读写，回退到直接访问注册表
+                settingsCacheInitialized = False
+            End Try
+        End SyncLock
+    End Sub
+    
+    ' 归一化值类型：模拟 RegistryKey.SetValue 的转换规则
+    ' Int32/String/String[]/Byte[] 保持原样，其他类型转字符串（与注册表实际存储一致）
+    Private Function NormalizeRegistryValue(value As Object) As Object
+        If value Is Nothing Then Return Nothing
+        Dim t As Type = value.GetType()
+        If t Is GetType(Integer) OrElse t Is GetType(String) OrElse 
+           t Is GetType(String()) OrElse t Is GetType(Byte()) Then
+            Return value
+        End If
+        ' Boolean、Double 等会被 SetValue 转为字符串存储，缓存也这样做
+        Return value.ToString()
+    End Function
+    
     '保留热键列表
     Private ReadOnly ReservedHotkeys As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {
         "Ctrl+A", "Ctrl+C", "Ctrl+F", "Ctrl+N", "Ctrl+O", "Ctrl+P", "Ctrl+S", "Ctrl+V", "Ctrl+W", "Ctrl+X", "Ctrl+Y", "Ctrl+Z",
         "Alt+F4", "Alt+Tab", "Ctrl+Shift+Esc", "Ctrl+Alt+Delete", "Win+D", "Win+E", "Win+I", "Win+L", "Win+R", "Win+Tab"
     }
 
-    '写入设置
+    '写入设置（更新缓存并写入注册表）
     Public Sub WriteSetting(key As String, value As Object)
         Try
+            EnsureCacheInitialized()
+            ' 归一化类型：与 RegistryKey.SetValue 保持一致
+            ' 注册表内部会将非原生类型（如 Boolean）转为字符串，缓存也要这样做
+            Dim normalizedValue As Object = NormalizeRegistryValue(value)
+            SyncLock cacheLock
+                settingsCache(key) = normalizedValue
+            End SyncLock
             Using regKey As RegistryKey = Registry.CurrentUser.CreateSubKey(RegistryPath)
                 regKey.SetValue(key, value)
             End Using
@@ -21,8 +67,19 @@ Module SettingsModule
         End Try
     End Sub
 
-    '读取设置
+    '读取设置（优先从缓存读取，F-10）
     Public Function ReadSetting(key As String, defaultValue As Object) As Object
+        EnsureCacheInitialized()
+        If settingsCacheInitialized Then
+            SyncLock cacheLock
+                If settingsCache.ContainsKey(key) Then
+                    Return settingsCache(key)
+                End If
+            End SyncLock
+            Return defaultValue
+        End If
+        
+        ' 缓存未初始化时回退到直接读取
         Try
             Using regKey As RegistryKey = Registry.CurrentUser.OpenSubKey(RegistryPath)
                 If regKey IsNot Nothing Then
@@ -37,9 +94,13 @@ Module SettingsModule
         End Try
     End Function
 
-    '删除设置
+    '删除设置（同步更新缓存）
     Public Sub DeleteSetting(key As String)
         Try
+            EnsureCacheInitialized()
+            SyncLock cacheLock
+                settingsCache.Remove(key)
+            End SyncLock
             Using regKey As RegistryKey = Registry.CurrentUser.OpenSubKey(RegistryPath, True)
                 regKey?.DeleteValue(key, False)
             End Using
@@ -48,9 +109,13 @@ Module SettingsModule
         End Try
     End Sub
 
-    '删除所有设置
+    '删除所有设置（清空缓存）
     Public Sub DeleteAllSettings()
         Try
+            SyncLock cacheLock
+                settingsCache.Clear()
+                settingsCacheInitialized = False
+            End SyncLock
             Using regKey As RegistryKey = Registry.CurrentUser.OpenSubKey("Software", True)
                 regKey?.DeleteSubKeyTree("LCS\keyboardmgr", False)
             End Using

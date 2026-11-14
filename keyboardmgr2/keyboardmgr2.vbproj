@@ -1,4 +1,4 @@
-﻿<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="packages\Microsoft.Windows.SDK.BuildTools.10.0.22621.756\build\Microsoft.Windows.SDK.BuildTools.props" Condition="Exists('packages\Microsoft.Windows.SDK.BuildTools.10.0.22621.756\build\Microsoft.Windows.SDK.BuildTools.props')" />
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
@@ -61,18 +61,6 @@
     <ApplicationIcon>appiconnew.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="ControlzEx, Version=4.0.0.0, Culture=neutral, PublicKeyToken=69f1c32f803d307e, processorArchitecture=MSIL">
-      <HintPath>packages\ControlzEx.4.4.0\lib\net462\ControlzEx.dll</HintPath>
-    </Reference>
-    <Reference Include="Microsoft.Web.WebView2.WinForms, Version=1.0.2903.40, Culture=neutral, PublicKeyToken=2a8ab48044d2601e, processorArchitecture=MSIL">
-      <HintPath>packages\Microsoft.Web.WebView2.1.0.2903.40\lib\net462\Microsoft.Web.WebView2.WinForms.dll</HintPath>
-    </Reference>
-    <Reference Include="Microsoft.Web.WebView2.Wpf, Version=1.0.2903.40, Culture=neutral, PublicKeyToken=2a8ab48044d2601e, processorArchitecture=MSIL">
-      <HintPath>packages\Microsoft.Web.WebView2.1.0.2903.40\lib\net462\Microsoft.Web.WebView2.Wpf.dll</HintPath>
-    </Reference>
-    <Reference Include="Microsoft.Xaml.Behaviors, Version=1.1.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
-      <HintPath>packages\Microsoft.Xaml.Behaviors.Wpf.1.1.19\lib\net45\Microsoft.Xaml.Behaviors.dll</HintPath>
-    </Reference>
     <Reference Include="netstandard" />
     <Reference Include="System.Activities" />
     <Reference Include="System.ComponentModel.DataAnnotations" />
@@ -127,6 +115,7 @@
     <Compile Include="Modules\OpEngine.vb" />
     <Compile Include="Modules\MacroModel.vb" />
     <Compile Include="Modules\KbmrCodec.vb" />
+    <Compile Include="Modules\ScreenMetrics.vb" />
     <Compile Include="Modules\RecordingStore.vb" />
     <Compile Include="Modules\InputRecorder.vb" />
     <Compile Include="Modules\MacroPlayer.vb" />
@@ -141,6 +130,8 @@
     <Compile Include="Modules\UserInputHandler.vb" />
     <Compile Include="MyTrayicon.vb" />
     <Compile Include="Modules\RapidFirePreset.vb" />
+    <Compile Include="Modules\SendPipeline.vb" />
+    <Compile Include="Modules\HighResolutionWaiter.vb" />
     <Compile Include="Modules\UpdateModule.vb" />
     <Compile Include="ProgressRingArc.vb" />
     <Compile Include="My Project\Resources.Designer.vb">
@@ -194,11 +185,11 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="resource\DarkTheme.xaml">
+    <Page Include="Resource\DarkTheme.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="resource\LightTheme.xaml">
+    <Page Include="Resource\LightTheme.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -247,7 +238,7 @@
       <LastGenOutput>Settings.Designer.vb</LastGenOutput>
     </None>
     <None Include="packages.config" />
-    <Resource Include="resource\Segoe Fluent Icons.ttf" />
+    <Resource Include="Resource\Segoe Fluent Icons.ttf" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
@@ -262,16 +253,16 @@
     <Resource Include="appiconnew.ico" />
   </ItemGroup>
   <ItemGroup>
-    <Resource Include="resource\icondark.ico" />
+    <Resource Include="Resource\icondark.ico" />
   </ItemGroup>
   <ItemGroup>
-    <Resource Include="resource\icon.ico" />
+    <Resource Include="Resource\icon.ico" />
   </ItemGroup>
   <ItemGroup>
-    <Resource Include="resource\icon.png" />
+    <Resource Include="Resource\icon.png" />
   </ItemGroup>
   <ItemGroup>
-    <Resource Include="resource\icondark.png" />
+    <Resource Include="Resource\icondark.png" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\WindowSelector\LCSWindowSelector.vbproj">
@@ -279,24 +270,11 @@
       <Name>LCSWindowSelector</Name>
     </ProjectReference>
   </ItemGroup>
-  <ItemGroup>
-    <COMReference Include="IWshRuntimeLibrary">
-      <Guid>{F935DC20-1CF0-11D0-ADB9-00C04FD58A0B}</Guid>
-      <VersionMajor>1</VersionMajor>
-      <VersionMinor>0</VersionMinor>
-      <Lcid>0</Lcid>
-      <WrapperTool>tlbimp</WrapperTool>
-      <Isolated>False</Isolated>
-      <EmbedInteropTypes>True</EmbedInteropTypes>
-    </COMReference>
-  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.VisualBasic.targets" />
-  <Import Project="packages\Microsoft.Web.WebView2.1.0.2903.40\build\Microsoft.Web.WebView2.targets" Condition="Exists('packages\Microsoft.Web.WebView2.1.0.2903.40\build\Microsoft.Web.WebView2.targets')" />
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
-      <ErrorText>这台计算机上缺少此项目引用的 NuGet 程序包。使用“NuGet 程序包还原”可下载这些程序包。有关更多信息，请参见 http://go.microsoft.com/fwlink/?LinkID=322105。缺少的文件是 {0}。</ErrorText>
+      <ErrorText>这台计算机上缺少此项目引用的 NuGet 程序包。使用"NuGet 程序包还原"可下载这些程序包。有关更多信息，请参见 http://go.microsoft.com/fwlink/?LinkID=322105。缺少的文件是 {0}。</ErrorText>
     </PropertyGroup>
-    <Error Condition="!Exists('packages\Microsoft.Web.WebView2.1.0.2903.40\build\Microsoft.Web.WebView2.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Microsoft.Web.WebView2.1.0.2903.40\build\Microsoft.Web.WebView2.targets'))" />
     <Error Condition="!Exists('packages\Microsoft.Windows.SDK.BuildTools.10.0.22621.756\build\Microsoft.Windows.SDK.BuildTools.props')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Microsoft.Windows.SDK.BuildTools.10.0.22621.756\build\Microsoft.Windows.SDK.BuildTools.props'))" />
     <Error Condition="!Exists('packages\Microsoft.Windows.SDK.BuildTools.10.0.22621.756\build\Microsoft.Windows.SDK.BuildTools.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Microsoft.Windows.SDK.BuildTools.10.0.22621.756\build\Microsoft.Windows.SDK.BuildTools.targets'))" />
   </Target>

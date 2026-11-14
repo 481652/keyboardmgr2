@@ -44,10 +44,10 @@ Public Class DataBridge
                 End If
             ElseIf roll < 94 Then
                 Dim button As Byte = CByte(If(rng.Next(2) = 0, 1, 2))
-                events.Add(New KbmrEvent With {.OffsetMs = offset, .Kind = KbmrEventKind.MouseDown, .Button = button})
+                events.Add(New KbmrEvent With {.OffsetMs = offset, .Kind = KbmrEventKind.MouseDown, .Button = button, .X = x, .Y = y})
                 If events.Count < eventCount Then
                     offset += rng.Next(20, 120)
-                    events.Add(New KbmrEvent With {.OffsetMs = offset, .Kind = KbmrEventKind.MouseUp, .Button = button})
+                    events.Add(New KbmrEvent With {.OffsetMs = offset, .Kind = KbmrEventKind.MouseUp, .Button = button, .X = x, .Y = y})
                 End If
             Else
                 events.Add(New KbmrEvent With {.OffsetMs = offset, .Kind = KbmrEventKind.Wheel, .Delta = If(rng.Next(2) = 0, 120, -120)})
@@ -79,6 +79,15 @@ Public Class DataBridge
     Public Shared Function LoadFile(path As String) As KbmrRecording
         Return KbmrCodec.Deserialize(File.ReadAllBytes(path))
     End Function
+
+    Public Shared Function LoadMetadata(path As String) As KbmrRecording
+        Return KbmrCodec.ReadMetadata(path)
+    End Function
+
+    Public Shared Function LoadEvents(rec As KbmrRecording) As Boolean
+        Return RecordingStore.LoadEvents(rec)
+    End Function
+
 
     Public Shared Function ParseKeyName(name As String) As UShort
         Return KeyNameMapper.ParseKeyName(name)

@@ -255,8 +255,9 @@ Public Class FloatingWindow
     Public Sub ApplyDisplayMode(mode As Byte)
         FloatingWindowState = mode
         CancelFoldTimer()
+        'T20：轮询间隔 100ms → 250ms
         If mode = 2 Then
-            pointerPollTimer.Change(0, 100)
+            pointerPollTimer.Change(0, 250)
         Else
             pointerPollTimer.Change(Threading.Timeout.Infinite, Threading.Timeout.Infinite)
         End If
@@ -404,12 +405,10 @@ Public Class FloatingWindow
 
 #Region "Detecting mouse"
     Private Sub CancelFoldTimer()
-        foldDelayTimer?.Dispose()
+        'T20：foldDelayTimer 用完 Dispose
+        Dim timer As Threading.Timer = foldDelayTimer
         foldDelayTimer = Nothing
-        'animationVersion += 1
-        'Dim currentTop As Double = Top
-        'BeginAnimation(TopProperty, Nothing)
-        'Top = currentTop
+        timer?.Dispose()
     End Sub
 
     Private Sub ScheduleFold()
@@ -483,35 +482,25 @@ Public Class FloatingWindow
         '置托盘图标（作为字段持有，退出时 Dispose 防止托盘残留幽灵图标）
         trayIcon = New MyTrayicon
 
-        ApplyDisplayMode(FloatingWindowState)
+        'T21：置顶逻辑移除了立即 JellyBounce（MainWindow OnApplicationIdle 时播放）
         If ReadSetting("IsFloatingWinTopmost", 0) = 1 Then
             MainWindow1.Instance.DoFloatingWindowTopmost.IsChecked = True
-            FloatingWindow.Instance.SetWindowTopMost()
+            Topmost = True
         Else
             MainWindow1.Instance.DoFloatingWindowTopmost.IsChecked = False
-            FloatingWindow.Instance.SetWindowNotTopMost()
+            Topmost = False
         End If
         ThemeModule.ApplyWindowBackdrop(Me, AnimatedBorder, isMicaEnabled AndAlso ThemeModule.IsWindows11_22H2OrLater(), True)
-
-        '加载子窗口，使其吸附
-        '暂时注释掉，还没做完
-
-        'clipboardWindow = New ClipboardWindow() With {
-        '    .Owner = Me,
-        '    .WindowStartupLocation = WindowStartupLocation.Manual,
-        '    .ShowActivated = False
-        '}
-
-        'clipboardWindow.Show()
     End Sub
 
     Private Sub Window_Closing(sender As Object, e As System.ComponentModel.CancelEventArgs)
         If Not isClosing Then
-            '取消默认关闭行为
             e.Cancel = True
             isClosing = True
-
             CancelFoldTimer()
+            'T20：pointerPollTimer Dispose
+            pointerPollTimer?.Dispose()
+            pointerPollTimer = Nothing
             MoveTo(-Height, True, Sub() Close())
         End If
         UnregisterGlobalHotkey()
@@ -527,6 +516,8 @@ Public Class FloatingWindow
         '设置消息过滤器
         Dim hwndSource As HwndSource = HwndSource.FromVisual(Me)
         hwndSource.AddHook(AddressOf WndProc)
+        '启动白屏修复：显示前就应用背景色/云母（原来在 Loaded 中，窗口已可见）
+        ThemeModule.ApplyWindowBackdrop(Me, AnimatedBorder, isMicaEnabled AndAlso ThemeModule.IsWindows11_22H2OrLater(), True)
     End Sub
 
     Private Sub Button_Click(sender As Object, e As RoutedEventArgs) '退出
@@ -535,6 +526,16 @@ Public Class FloatingWindow
 
     Public Sub StopApp() '退出程序方法
         If LoafModule.InLoafMode Then LoafModule.ExitLoafMode()
+        '退出走的是 Environment.Exit（不会触发 Application.Exit），在这里停止后台任务并释放资源
+        Try
+            ScriptRunner.StopScript()
+            ScriptRunner.Shutdown()
+        Catch
+        End Try
+        ' 保存主窗口位置后再退出（F-19）
+        If MainWindow1.Instance IsNot Nothing Then
+            MainWindow1.Instance.Dispatcher.Invoke(Sub() MainWindow1.Instance.SaveWindowPlacement())
+        End If
         Close()
         Dim timer As New System.Timers.Timer(1000) '在悬浮窗缩回后0.5秒时退出
         AddHandler timer.Elapsed, AddressOf Timer_Elapsed

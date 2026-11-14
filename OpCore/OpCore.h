@@ -54,8 +54,11 @@ OPCORE_API int __stdcall OpCore_KeyTap(unsigned short vk);
 OPCORE_API int __stdcall OpCore_KeyDown(unsigned short vk);
 OPCORE_API int __stdcall OpCore_KeyUp(unsigned short vk);
 
-// 发送组合键（修饰键先按下、逆序释放，中间保持 50ms）
+// 发送组合键（修饰键先按下、逆序释放，中间保持 ComboHoldMs，默认 3ms）
 OPCORE_API int __stdcall OpCore_KeyCombo(const unsigned short* keys, int keyCount);
+
+// 设置组合键按下→抬起的保持时长（1~20ms，默认 3ms）；同时作用于键盘连点的组合键路径。越界返回 2
+OPCORE_API int __stdcall OpCore_SetComboHoldMs(int holdMs);
 
 // 输入文本（SendInput 逐字符 Unicode 注入，回车/换行转换为 Enter）
 OPCORE_API int __stdcall OpCore_TypeText(const wchar_t* text);

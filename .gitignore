@@ -370,6 +370,7 @@ FodyWeavers.xsd
 # The performance scripts themselves (.perf/scripts/, .perf/bench/src/,
 # .perf/bench/build.ps1) stay versioned on purpose.
 /.perf/baseline-v231/
+/.perf/results/
 /.perf/data/
 /.perf/logs/
 /.perf/logs-new/
