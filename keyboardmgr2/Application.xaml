@@ -16,8 +16,8 @@
             <sys:String x:Key="Icon.Record">&#xE7C8;</sys:String>
             <sys:String x:Key="Icon.Script">&#xE943;</sys:String>
             <SolidColorBrush x:Key="TopmostButtonCheckedForeground" Color="White"/>
+            <!-- 主题资源由 Application_Startup 中的 SwitchTheme 加载，避免启动时重复解析 -->
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="resource/LightTheme.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

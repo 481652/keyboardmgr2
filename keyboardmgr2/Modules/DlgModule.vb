@@ -34,6 +34,12 @@ Module DlgModule
         frm.ShowDialog()
     End Sub
     Public Sub ShowMyMessage(message As String)
+        '提示窗必须在 UI 线程创建（连发流水线等后台线程可能间接调用到这里）
+        Dim dispatcher As Windows.Threading.Dispatcher = Windows.Application.Current?.Dispatcher
+        If dispatcher IsNot Nothing AndAlso Not dispatcher.CheckAccess() Then
+            dispatcher.BeginInvoke(New Action(Of String)(AddressOf ShowMyMessage), message)
+            Return
+        End If
         Dim myMsgbox As New MyMsgbox
         myMsgbox.messageText.Text = message
         myMsgbox.ShowMsg()

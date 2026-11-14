@@ -362,3 +362,33 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Documentation and design notes (kept local, not versioned)
+/docs/
+
+# Performance test artifacts: raw data, logs, baselines and reports - kept local.
+# The performance scripts themselves (.perf/scripts/, .perf/bench/src/,
+# .perf/bench/build.ps1) stay versioned on purpose.
+/.perf/baseline-v231/
+/.perf/results/
+/.perf/data/
+/.perf/logs/
+/.perf/logs-new/
+/.perf/env/
+/.perf/newver/
+/.perf/bench/bin/
+/.perf/bench/tmp/
+/.perf/bench/logs/
+/.perf/*.md
+/.perf/bench/*.md
+/.perf/scripts/*.exe
+/性能测试报告*.md
+
+# Generated code/report output
+/.VSCodeCounter/
+
+# Exclude test artifacts
+*.kbmr
+
+# Promo materials (marketing assets)
+/promo/

@@ -1,4 +1,6 @@
 'PowerShell 脚本运行器：在独立 STA 线程中运行脚本，支持停止、输出重定向与结束回调。
+'T18: Runspace 池化复用 + 输出批量追加（50–100ms 缓冲，减少 UI 线程 Invoke 次数）
+Imports System.Collections.Concurrent
 Imports System.Management.Automation
 Imports System.Management.Automation.Runspaces
 Imports System.Threading
@@ -7,10 +9,13 @@ Module ScriptRunner
     Public Event OutputReceived(text As String)
     Public Event StateChanged(running As Boolean)
 
+    Private pooledRunspace As Runspace
     Private powerShell As PowerShell
     Private runnerThread As Thread
     Private running As Boolean
     Private isStopRequested As Boolean
+    Private ReadOnly outputBuffer As New ConcurrentQueue(Of String)
+    Private outputFlushTimer As Timer
 
     Public ReadOnly Property IsRunning As Boolean
         Get
@@ -29,6 +34,7 @@ Module ScriptRunner
         running = True
         isStopRequested = False
         RaiseEvent StateChanged(True)
+        StartOutputFlush()
         runnerThread = New Thread(AddressOf RunThread) With {.IsBackground = True, .Name = "KbmrScriptRunner"}
         runnerThread.SetApartmentState(ApartmentState.STA)
         runnerThread.Start(code)
@@ -50,36 +56,88 @@ Module ScriptRunner
         Dim code As String = DirectCast(state, String)
         Dim instance As PowerShell = Nothing
         Try
-            instance = PowerShell.Create(BuildSessionState())
+            Dim runspace As Runspace = GetOrCreatePooledRunspace()
+            instance = PowerShell.Create()
+            instance.Runspace = runspace
             powerShell = instance
             AddHandler instance.Streams.Information.DataAdded, AddressOf Information_DataAdded
             AddHandler instance.Streams.Error.DataAdded, AddressOf Error_DataAdded
             instance.AddScript(code).AddCommand("Out-String").AddParameter("Stream", True)
             Dim results As System.Collections.ObjectModel.Collection(Of PSObject) = instance.Invoke()
             For Each item As PSObject In results
-                If item IsNot Nothing Then Emit(item.ToString())
+                If item IsNot Nothing Then EmitBuffered(item.ToString())
             Next
         Catch ex As PipelineStoppedException
-            Emit("脚本已停止。")
+            EmitBuffered("脚本已停止。")
         Catch ex As Exception
-            Emit("脚本运行出错：" & ex.Message)
+            EmitBuffered("脚本运行出错：" & ex.Message)
         Finally
             Try
-                If instance IsNot Nothing Then instance.Dispose()
+                If instance IsNot Nothing Then
+                    instance.Commands.Clear()
+                    instance.Streams.ClearStreams()
+                    instance.Dispose()
+                End If
             Catch
             End Try
             powerShell = Nothing
             ScriptHost.ForceUnblockInput()
+            FlushOutputBuffer()
+            StopOutputFlush()
             running = False
             RaiseEvent StateChanged(False)
         End Try
+    End Sub
+
+    'T18: 复用 Runspace（省去每次 CreateDefault2 + Open 的数百毫秒冷启动）。
+    '每次运行前 ResetRunspaceState 把变量/函数恢复到初始会话状态，避免上一个脚本的残留影响下一个；
+    '重置失败或 Runspace 已损坏时丢弃并新建。
+    Private Function GetOrCreatePooledRunspace() As Runspace
+        Dim runspace As Runspace = pooledRunspace
+        If runspace IsNot Nothing Then
+            If runspace.RunspaceStateInfo.State = RunspaceState.Opened Then
+                Try
+                    runspace.ResetRunspaceState()
+                    Return runspace
+                Catch
+                End Try
+            End If
+            DisposePooledRunspace()
+        End If
+        runspace = RunspaceFactory.CreateRunspace(BuildSessionState())
+        '与旧实现一致：脚本在调用方的 STA 线程上执行（剪贴板等 API 需要 STA）
+        runspace.ApartmentState = ApartmentState.STA
+        runspace.ThreadOptions = PSThreadOptions.UseCurrentThread
+        runspace.Open()
+        pooledRunspace = runspace
+        Return runspace
+    End Function
+
+    Private Sub DisposePooledRunspace()
+        Dim runspace As Runspace = pooledRunspace
+        pooledRunspace = Nothing
+        If runspace Is Nothing Then Return
+        Try
+            runspace.Close()
+        Catch
+        End Try
+        Try
+            runspace.Dispose()
+        Catch
+        End Try
+    End Sub
+
+    '程序退出时调用，释放池化的 Runspace
+    Public Sub Shutdown()
+        If running Then Return
+        DisposePooledRunspace()
     End Sub
 
     Private Sub Information_DataAdded(sender As Object, e As DataAddedEventArgs)
         Try
             Dim collection As PSDataCollection(Of InformationRecord) = DirectCast(sender, PSDataCollection(Of InformationRecord))
             Dim record As InformationRecord = collection(e.Index)
-            If record IsNot Nothing Then Emit(record.MessageData.ToString())
+            If record IsNot Nothing Then EmitBuffered(record.MessageData.ToString())
         Catch
         End Try
     End Sub
@@ -88,13 +146,44 @@ Module ScriptRunner
         Try
             Dim collection As PSDataCollection(Of ErrorRecord) = DirectCast(sender, PSDataCollection(Of ErrorRecord))
             Dim record As ErrorRecord = collection(e.Index)
-            If record IsNot Nothing Then Emit("错误：" & record.ToString())
+            If record IsNot Nothing Then EmitBuffered("错误：" & record.ToString())
         Catch
         End Try
     End Sub
 
-    Private Sub Emit(text As String)
-        RaiseEvent OutputReceived(text)
+    'T18: 输出入队缓冲区，定时器每 80ms 批量刷新（减少 UI Invoke 次数）
+    Private Sub EmitBuffered(text As String)
+        outputBuffer.Enqueue(text)
+    End Sub
+
+    Private Sub StartOutputFlush()
+        outputFlushTimer = New Timer(AddressOf FlushOutputCallback, Nothing, 80, 80)
+    End Sub
+
+    Private Sub StopOutputFlush()
+        Dim timer As Timer = outputFlushTimer
+        outputFlushTimer = Nothing
+        timer?.Dispose()
+    End Sub
+
+    Private Sub FlushOutputCallback(state As Object)
+        FlushOutputBuffer()
+    End Sub
+
+    Private ReadOnly flushLock As New Object()
+
+    '定时器线程与脚本线程（结束时）都可能调用；加锁保证批次按顺序发出
+    Private Sub FlushOutputBuffer()
+        If outputBuffer.IsEmpty Then Return
+        SyncLock flushLock
+            Dim batch As New Text.StringBuilder()
+            Dim text As String = Nothing
+            While outputBuffer.TryDequeue(text)
+                If batch.Length > 0 Then batch.AppendLine()
+                batch.Append(text)
+            End While
+            If batch.Length > 0 Then RaiseEvent OutputReceived(batch.ToString())
+        End SyncLock
     End Sub
 
     Private Function BuildSessionState() As InitialSessionState

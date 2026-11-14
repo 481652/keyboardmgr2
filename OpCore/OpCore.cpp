@@ -30,6 +30,54 @@ int g_heldMouseButton = OPCORE_MOUSE_LEFT;
 bool g_holdingKeys = false;
 std::vector<unsigned short> g_heldKeys;
 
+// 组合键按下→抬起之间的保持时长（毫秒，1~20，默认 3）。T14 (F-03)：替代原先固定的 Sleep(50)
+volatile LONG g_comboHoldMs = 3;
+
+LONGLONG QpcFrequency()
+{
+    static LONGLONG freq = 0;
+    if (freq == 0)
+    {
+        LARGE_INTEGER f;
+        QueryPerformanceFrequency(&f);
+        freq = f.QuadPart;
+    }
+    return freq;
+}
+
+// 当前时间（100ns 单位，基于 QPC）
+LONGLONG Now100ns()
+{
+    LARGE_INTEGER c;
+    QueryPerformanceCounter(&c);
+    LONGLONG freq = QpcFrequency();
+    return (c.QuadPart / freq) * 10000000LL + (c.QuadPart % freq) * 10000000LL / freq;
+}
+
+// 用高精度可等待定时器等待 wait100ns，期间可被 stopEvent 打断。返回 false 表示应退出。
+bool WaitOrStop(HANDLE timer, HANDLE stopEvent, LONGLONG wait100ns)
+{
+    if (wait100ns <= 0)
+    {
+        return WaitForSingleObject(stopEvent, 0) != WAIT_OBJECT_0;
+    }
+    LARGE_INTEGER due;
+    due.QuadPart = -wait100ns;
+    if (!SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) return false;
+    HANDLE handles[2] = { timer, stopEvent };
+    DWORD result = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
+    return result == WAIT_OBJECT_0;
+}
+
+// 绝对期限调度：nextDue += interval；落后超过一个周期时跳拍（不补发堆积的点击）
+LONGLONG AdvanceDeadline(LONGLONG nextDue, LONGLONG interval100ns)
+{
+    nextDue += interval100ns;
+    LONGLONG now = Now100ns();
+    if (now - nextDue > interval100ns) nextDue = now + interval100ns;
+    return nextDue;
+}
+
 bool IsModifierKey(unsigned short key)
 {
     return key == 0xA0 || key == 0xA1 || key == 0xA2 || key == 0xA3 ||
@@ -145,16 +193,10 @@ void MouseClickWorker(int intervalMs, int randomSpeedOffset, int randomPosOffset
     std::uniform_int_distribution<int> speedDist(-10, 10);
     std::uniform_int_distribution<int> posDist(-15, 15);
 
+    LONGLONG nextDue = Now100ns() + (LONGLONG)currentInterval * 10000;
     for (;;)
     {
-        LARGE_INTEGER due;
-        due.QuadPart = -((LONGLONG)currentInterval * 10000);
-        SetWaitableTimer(g_timer, &due, 0, nullptr, nullptr, FALSE);
-
-        HANDLE handles[2] = { g_timer, g_stopEvent };
-        DWORD result = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
-        if (result == WAIT_OBJECT_0 + 1) break;
-        if (result != WAIT_OBJECT_0) break;
+        if (!WaitOrStop(g_timer, g_stopEvent, nextDue - Now100ns())) break;
 
         if (randomPosOffset)
         {
@@ -175,6 +217,7 @@ void MouseClickWorker(int intervalMs, int randomSpeedOffset, int randomPosOffset
         {
             currentInterval = baseInterval;
         }
+        nextDue = AdvanceDeadline(nextDue, (LONGLONG)currentInterval * 10000);
     }
 }
 
@@ -187,16 +230,12 @@ void KeyClickWorker(int intervalMs, std::vector<unsigned short> keys)
     for (int i = 0; i < keyCount; ++i) localKeys[i] = keys[i];
 
     int baseInterval = (intervalMs > 0) ? intervalMs : 1;
+    LONGLONG interval100ns = (LONGLONG)baseInterval * 10000;
 
+    LONGLONG nextDue = Now100ns() + interval100ns;
     for (;;)
     {
-        LARGE_INTEGER due;
-        due.QuadPart = -((LONGLONG)baseInterval * 10000);
-        SetWaitableTimer(g_timer, &due, 0, nullptr, nullptr, FALSE);
-
-        HANDLE handles[2] = { g_timer, g_stopEvent };
-        DWORD result = WaitForMultipleObjects(2, handles, FALSE, INFINITE);
-        if (result != WAIT_OBJECT_0) break;
+        if (!WaitOrStop(g_timer, g_stopEvent, nextDue - Now100ns())) break;
 
         if (keyCount == 1)
         {
@@ -205,10 +244,14 @@ void KeyClickWorker(int intervalMs, std::vector<unsigned short> keys)
         }
         else
         {
+            // T14 (F-03)：按下 → 高精度保持 g_comboHoldMs → 抬起；保持期间也可被 Stop 打断
             SendKeyComboDown(localKeys, keyCount);
-            Sleep(50);
+            bool keepRunning = WaitOrStop(g_timer, g_stopEvent, (LONGLONG)g_comboHoldMs * 10000);
             SendKeyComboUp(localKeys, keyCount);
+            if (!keepRunning) break;
         }
+        // 期限从本轮开始时刻累加，按住时长计入周期，不再叠加到间隔上
+        nextDue = AdvanceDeadline(nextDue, interval100ns);
     }
 }
 
@@ -356,8 +399,30 @@ int __stdcall OpCore_KeyCombo(const unsigned short* keys, int keyCount)
     unsigned short localKeys[4] = { 0, 0, 0, 0 };
     for (int i = 0; i < count; ++i) localKeys[i] = keys[i];
     SendKeyComboDown(localKeys, count);
-    Sleep(50);
+    // T14 (F-03)：用独立的高精度定时器保持 g_comboHoldMs，替代 Sleep(50)
+    HANDLE holdTimer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    if (holdTimer)
+    {
+        LARGE_INTEGER due;
+        due.QuadPart = -((LONGLONG)g_comboHoldMs * 10000);
+        if (SetWaitableTimer(holdTimer, &due, 0, nullptr, nullptr, FALSE))
+        {
+            WaitForSingleObject(holdTimer, 1000);
+        }
+        CloseHandle(holdTimer);
+    }
+    else
+    {
+        Sleep((DWORD)g_comboHoldMs);
+    }
     SendKeyComboUp(localKeys, count);
+    return 0;
+}
+
+int __stdcall OpCore_SetComboHoldMs(int holdMs)
+{
+    if (holdMs < 1 || holdMs > 20) return 2;
+    InterlockedExchange(&g_comboHoldMs, holdMs);
     return 0;
 }
 

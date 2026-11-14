@@ -68,7 +68,14 @@ Module ThemeModule
     Public usercolor As Color
     Public color As Color
 
+    '当前已加载的主题字典；Nothing 表示尚未加载任何主题
+    Private loadedThemeIsDark As Boolean? = Nothing
+
     Public Sub SwitchTheme(isDarkMode As Boolean)
+        '目标主题已加载时直接返回，避免重复解析主题字典（F-05）
+        If loadedThemeIsDark.HasValue AndAlso loadedThemeIsDark.Value = isDarkMode Then Return
+        loadedThemeIsDark = isDarkMode
+
         Dim themeUri As New Uri(If(isDarkMode, "resource/DarkTheme.xaml", "resource/LightTheme.xaml"), UriKind.Relative)
         Dim newResourceDict As New ResourceDictionary() With {.Source = themeUri}
         Windows.Application.Current.Resources.MergedDictionaries.Clear()
@@ -76,8 +83,8 @@ Module ThemeModule
         isDarkTheme = isDarkMode
         ApplySystemAccentColor()
 
-        If Windows.Application.Current.MainWindow IsNot Nothing Then
-            Windows.Application.Current.MainWindow.UpdateLayout()
+        '不再显式 UpdateLayout()：DynamicResource 变更会自然触发布局
+        If Windows.Application.Current.MainWindow IsNot Nothing AndAlso MainWindow1.Instance IsNot Nothing Then
             MainWindow1.Instance.Pinicon_Set()
         End If
         UpdateWindowBackdrops()

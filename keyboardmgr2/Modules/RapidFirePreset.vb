@@ -28,6 +28,8 @@ End Class
 
 Public Module RapidFirePresetCodec
     Private ReadOnly Magic As Byte() = Encoding.ASCII.GetBytes("LCSLST2")
+    'T19：严格 UTF-8 编码器复用为单例（无 BOM，非法字节抛异常），避免每个条目新建实例
+    Private ReadOnly StrictUtf8 As Encoding = New UTF8Encoding(False, True)
     Private Const TextFormatVersion As UShort = 1
     Private Const MixedFormatVersion As UShort = 2
     Public Const MaximumFileSize As Integer = 16 * 1024 * 1024
@@ -39,16 +41,16 @@ Public Module RapidFirePresetCodec
         Dim formatVersion As UShort = If(preset.Items.Any(Function(item) item.Kind = RapidFireItemKind.Image), MixedFormatVersion, TextFormatVersion)
         Dim payload As Byte()
         Using payloadStream As New MemoryStream()
-            Using writer As New BinaryWriter(payloadStream, New UTF8Encoding(False, True), True)
+            Using writer As New BinaryWriter(payloadStream, StrictUtf8, True)
                 writer.Write(preset.IntervalMilliseconds)
                 writer.Write(preset.SendLoop)
                 writer.Write(preset.Items.Count)
                 For Each item As RapidFireItem In preset.Items
                     If formatVersion = MixedFormatVersion Then writer.Write(CByte(item.Kind))
                     If item.Kind = RapidFireItemKind.Text Then
-                        WriteBytes(writer, New UTF8Encoding(False, True).GetBytes(If(item.Text, String.Empty)))
+                        WriteBytes(writer, StrictUtf8.GetBytes(If(item.Text, String.Empty)))
                     Else
-                        WriteBytes(writer, New UTF8Encoding(False, True).GetBytes(If(item.FileName, String.Empty)))
+                        WriteBytes(writer, StrictUtf8.GetBytes(If(item.FileName, String.Empty)))
                         WriteBytes(writer, item.ImageBytes)
                     End If
                 Next
@@ -59,7 +61,7 @@ Public Module RapidFirePresetCodec
 
         Dim compressed As Byte()
         Using compressedStream As New MemoryStream()
-            Using deflate As New DeflateStream(compressedStream, CompressionLevel.Optimal, True)
+            Using deflate As New DeflateStream(compressedStream, CompressionLevel.Fastest, True)
                 deflate.Write(payload, 0, payload.Length)
             End Using
             compressed = compressedStream.ToArray()
@@ -122,20 +124,20 @@ Public Module RapidFirePresetCodec
 
         Dim preset As New RapidFirePreset With {.Items = New List(Of RapidFireItem)()}
         Using payloadStream As New MemoryStream(payload, False)
-            Using reader As New BinaryReader(payloadStream, New UTF8Encoding(False, True), True)
+            Using reader As New BinaryReader(payloadStream, StrictUtf8, True)
                 preset.IntervalMilliseconds = reader.ReadInt32()
                 preset.SendLoop = reader.ReadBoolean()
                 Dim count As Integer = reader.ReadInt32()
                 If count < 1 OrElse count > MaximumItemCount Then Throw New InvalidDataException("条目数量无效。")
                 For index As Integer = 0 To count - 1
                     If version = TextFormatVersion Then
-                        preset.Items.Add(RapidFireItem.CreateText(New UTF8Encoding(False, True).GetString(ReadBytes(reader, payloadStream, "条目"))))
+                        preset.Items.Add(RapidFireItem.CreateText(StrictUtf8.GetString(ReadBytes(reader, payloadStream, "条目"))))
                     Else
                         Dim kindValue As Byte = reader.ReadByte()
                         If kindValue = CByte(RapidFireItemKind.Text) Then
-                            preset.Items.Add(RapidFireItem.CreateText(New UTF8Encoding(False, True).GetString(ReadBytes(reader, payloadStream, "文本条目"))))
+                            preset.Items.Add(RapidFireItem.CreateText(StrictUtf8.GetString(ReadBytes(reader, payloadStream, "文本条目"))))
                         ElseIf kindValue = CByte(RapidFireItemKind.Image) Then
-                            Dim fileName As String = New UTF8Encoding(False, True).GetString(ReadBytes(reader, payloadStream, "图片名称"))
+                            Dim fileName As String = StrictUtf8.GetString(ReadBytes(reader, payloadStream, "图片名称"))
                             Dim imageBytes As Byte() = ReadBytes(reader, payloadStream, "图片")
                             preset.Items.Add(New RapidFireItem With {.Kind = RapidFireItemKind.Image, .FileName = fileName, .ImageBytes = imageBytes})
                         Else
